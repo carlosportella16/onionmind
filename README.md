@@ -2,7 +2,7 @@
 
 > AI-powered Knowledge Discovery Platform for the Tor Network.
 
-**Current Phase:** Phase 1 — Crawler + Full-Text Search (In Progress)
+**Current Phase:** Phase 0 complete (verified: schema applies via Flyway, real integration tests, module boundaries enforced) — Phase 1 (Crawler + Full-Text Search) starting
 
 **Tech Stack:** Go (crawler) • Java 25 (Spring Boot 4.1 + Spring Modulith) • PostgreSQL • Redpanda • React
 

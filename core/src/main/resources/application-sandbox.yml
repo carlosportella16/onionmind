@@ -8,7 +8,7 @@ spring:
     password: ${POSTGRES_PASSWORD:onionmind_dev_only}
   flyway:
     enabled: true
-    locations: classpath:db/migrations
+    locations: classpath:migrations
 
 server:
   port: 8081

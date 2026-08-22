@@ -4,7 +4,7 @@
 
 **Versão:** 2.0 (consolidada)
 **Data:** 2026-08-22
-**Status:** Fase 0 concluída, iniciando Fase 1
+**Status:** Fase 0 concluída (verificado 2026-08-22: schema aplicado via Flyway, testes de integração reais com Testcontainers, fronteiras de módulo verificadas via `ApplicationModules.verify()`), iniciando Fase 1
 
 Este documento consolida todas as decisões de arquitetura discutidas até aqui num único arquivo autocontido, pensado para ser usado como contexto (em `.claude`, ferramentas de IA, ou onboarding humano). Os documentos anteriores (`onionmind-sdd.md`, `onionmind-fase1-sdd.md`, `onionmind-descoberta-indexacao.md`) continuam existindo com código de implementação mais granular — este arquivo é a referência de mais alto nível que os une.
 

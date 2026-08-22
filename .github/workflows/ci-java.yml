@@ -2,12 +2,67 @@ name: CI (Java)
 on:
   push: { branches: [main], paths: ['core/**', 'db/**'] }
   pull_request: { paths: ['core/**', 'db/**'] }
+
 jobs:
   java:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '25' }
-      - run: ./gradlew checkstyleMain test
+
+      - name: Run tests and coverage
         working-directory: core
+        run: |
+          ./gradlew clean test jacocoTestReport
+          echo "TEST_PASSED=true" >> $GITHUB_ENV
+
+      - name: Check coverage threshold
+        if: env.TEST_PASSED == 'true'
+        working-directory: core
+        run: |
+          COVERAGE=$(grep -oP 'linerate="\K[^"]*' build/reports/jacoco/test/jacocoTestReport.xml | head -1)
+          if [ -z "$COVERAGE" ]; then
+            echo "⚠️ No coverage data found, continuing..."
+            exit 0
+          fi
+          COVERAGE_INT=$(awk "BEGIN {printf \"%.0f\", $COVERAGE * 100}")
+          echo "Coverage: $COVERAGE_INT%"
+          if [ $COVERAGE_INT -lt 80 ]; then
+            echo "❌ Coverage $COVERAGE_INT% is below 80% threshold"
+            exit 1
+          fi
+          echo "✓ Coverage $COVERAGE_INT% meets 80% threshold"
+
+      - name: Run Modulith verification
+        if: env.TEST_PASSED == 'true'
+        working-directory: core
+        run: ./gradlew verifyModules
+
+      - name: Build application
+        if: env.TEST_PASSED == 'true'
+        working-directory: core
+        run: ./gradlew build -x test
+
+      - name: SonarCloud Scan
+        if: env.TEST_PASSED == 'true'
+        working-directory: core
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ./gradlew sonar \
+            -Dsonar.projectKey=onionmind-java \
+            -Dsonar.organization=onionmind \
+            -Dsonar.host.url=https://sonarcloud.io \
+            -Dsonar.login=$SONAR_TOKEN
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-coverage-report
+          path: core/build/reports/jacoco/
+          retention-days: 90

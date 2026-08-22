@@ -1,4 +1,14 @@
-/crawler/                  @carlosportella16
-/core/                     @carlosportella16
-/web/                      @carlosportella16
-docs/*.md                  @carlosportella16
+# Code owners for OnionMind
+# See ADR-007: monorepo structure
+
+* @carlosportella
+core/** @carlosportella
+crawler/** @carlosportella
+db/** @carlosportella
+.github/** @carlosportella
+docs/** @carlosportella
+
+# * @fepersilva
+# core/** @fepersilva
+# crawler/** @fepersilva
+# db/** @fepersilva

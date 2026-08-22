@@ -1,7 +1,7 @@
 name: CI (Go)
 on:
-  push: { branches: [main], paths: ['crawler/**'] }
-  pull_request: { paths: ['crawler/**'] }
+  push: { branches: [main] }
+  pull_request: {}
 
 jobs:
   ci-go:
@@ -17,6 +17,18 @@ jobs:
         working-directory: crawler
         run: go vet ./...
 
-      - name: Run tests
+      - name: Run tests with coverage
         working-directory: crawler
-        run: go test ./...
+        run: go test -coverprofile=coverage.out ./...
+
+      - name: Check coverage threshold
+        working-directory: crawler
+        run: |
+          COVERAGE=$(go tool cover -func=coverage.out | tail -1 | grep -oP '\d+\.\d+(?=%)')
+          echo "Coverage: $COVERAGE%"
+          COVERAGE_INT=$(awk "BEGIN {printf \"%.0f\", $COVERAGE}")
+          if [ "$COVERAGE_INT" -lt 80 ]; then
+            echo "❌ Coverage $COVERAGE% is below 80% threshold"
+            exit 1
+          fi
+          echo "✓ Coverage $COVERAGE% meets 80% threshold"

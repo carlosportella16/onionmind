@@ -2,13 +2,11 @@ package com.onionmind.content;
 
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ProcessingResultTest {
 
-    private final Document doc = new Document("http://example.onion", "tor", "<html></html>", "text", DocumentType.HTML, Instant.now());
+    private final Document doc = new Document("http://example.onion", "tor", "<html></html>", "text", DocumentType.HTML);
 
     @Test
     void successHasSuccessStatusAndNoError() {

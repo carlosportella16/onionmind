@@ -86,6 +86,32 @@ class EmbeddingProcessorTest {
     }
 
     @Test
+    void vectorStoreThrowingOnHasUnchangedReturnsFailedInsteadOfPropagating() {
+        FakeVectorStore store = new FakeVectorStore();
+        store.throwOnHasUnchanged = true;
+        EmbeddingProcessor processor = new EmbeddingProcessor(new FakeAIOrchestrator(), store, CHUNK_SIZE_TOKENS, OVERLAP_PERCENT);
+        Document doc = new Document("http://example.onion", "tor", "<html></html>", "some content", DocumentType.HTML);
+
+        // Regression: Qdrant unreachable here must not throw out of process() — IngestionPipeline
+        // only tolerates a returned FAILED result, an escaping exception drops the whole page.
+        ProcessingResult result = processor.process(doc);
+
+        assertThat(result.status()).isEqualTo(ProcessingResult.Status.FAILED);
+    }
+
+    @Test
+    void vectorStoreThrowingOnUpsertReturnsFailedInsteadOfPropagating() {
+        FakeVectorStore store = new FakeVectorStore();
+        store.throwOnUpsert = true;
+        EmbeddingProcessor processor = new EmbeddingProcessor(new FakeAIOrchestrator(), store, CHUNK_SIZE_TOKENS, OVERLAP_PERCENT);
+        Document doc = new Document("http://example.onion", "tor", "<html></html>", "some content", DocumentType.HTML);
+
+        ProcessingResult result = processor.process(doc);
+
+        assertThat(result.status()).isEqualTo(ProcessingResult.Status.FAILED);
+    }
+
+    @Test
     void supportsOnlyHtml() {
         EmbeddingProcessor processor = new EmbeddingProcessor(new FakeAIOrchestrator(), new FakeVectorStore(), CHUNK_SIZE_TOKENS, OVERLAP_PERCENT);
 
@@ -122,6 +148,8 @@ class EmbeddingProcessorTest {
 
     private static class FakeVectorStore implements VectorStore {
         boolean unchanged = false;
+        boolean throwOnHasUnchanged = false;
+        boolean throwOnUpsert = false;
         int upsertCalls = 0;
         List<EmbeddingPoint> lastUpsertedPoints = new ArrayList<>();
 
@@ -131,6 +159,9 @@ class EmbeddingProcessorTest {
 
         @Override
         public void upsert(List<EmbeddingPoint> points) {
+            if (throwOnUpsert) {
+                throw new RuntimeException("qdrant unreachable");
+            }
             upsertCalls++;
             lastUpsertedPoints = points;
         }
@@ -142,6 +173,9 @@ class EmbeddingProcessorTest {
 
         @Override
         public boolean hasUnchangedEmbedding(String url, String contentHash) {
+            if (throwOnHasUnchanged) {
+                throw new RuntimeException("qdrant unreachable");
+            }
             return unchanged;
         }
 

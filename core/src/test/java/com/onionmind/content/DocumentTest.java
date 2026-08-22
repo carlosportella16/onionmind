@@ -2,16 +2,13 @@ package com.onionmind.content;
 
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 class DocumentTest {
 
     @Test
     void withExtractedTextUpdatesOnlyExtractedText() {
-        Instant fetchedAt = Instant.parse("2026-08-22T00:00:00Z");
-        Document original = new Document("http://example.onion", "tor", "<html></html>", null, DocumentType.HTML, fetchedAt);
+        Document original = new Document("http://example.onion", "tor", "<html></html>", null, DocumentType.HTML);
 
         Document updated = original.withExtractedText("plain text content");
 
@@ -19,7 +16,7 @@ class DocumentTest {
         assertThat(updated.sourceType()).isEqualTo(original.sourceType());
         assertThat(updated.rawHtml()).isEqualTo(original.rawHtml());
         assertThat(updated.type()).isEqualTo(original.type());
-        assertThat(updated.fetchedAt()).isEqualTo(original.fetchedAt());
+        assertThat(updated.contentHash()).isEqualTo(original.contentHash());
         assertThat(updated.extractedText()).isEqualTo("plain text content");
         assertThat(original.extractedText()).isNull();
     }

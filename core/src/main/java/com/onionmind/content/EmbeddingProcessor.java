@@ -44,16 +44,12 @@ public class EmbeddingProcessor implements ContentProcessor {
             return ProcessingResult.skipped(document, "no extracted text to embed");
         }
 
-        // Any failure here (Qdrant/Ollama unreachable, network error) must degrade to a
-        // FAILED result, never an uncaught exception — the rest of the ingestion pipeline
-        // (full-text indexing, persistence) must not be blocked by this being AI/network-backed
-        // (SDD Fase 2, sec. 3.6 — eventual consistency, observable but non-blocking).
         try {
             String currentHash = document.resolvedContentHash();
 
-            if (vectorStore.hasUnchangedEmbedding(document.url(), currentHash)) {
-                return ProcessingResult.unchanged(document);
-            }
+        if (vectorStore.hasUnchangedEmbedding(document.url(), currentHash)) {
+            return ProcessingResult.unchanged(document);
+        }
 
             List<String> chunks = TextChunker.chunk(document.extractedText(), chunkSize, overlapPercent);
             List<EmbeddingPoint> points = new ArrayList<>(chunks.size());
@@ -63,14 +59,18 @@ public class EmbeddingProcessor implements ContentProcessor {
                 TaskContext ctx = new TaskContext(
                     TaskContext.TaskType.EMBED, chunkText.length() / 4, null, false, false, null, 0
                 );
-                Embedding embedding = aiOrchestrator.embed(chunkText, ctx);
-                points.add(new EmbeddingPoint(
-                    UUID.nameUUIDFromBytes((document.url() + "-" + i).getBytes()),
-                    embedding.vector(),
-                    document.url(),
-                    i,
-                    currentHash
-                ));
+                try {
+                    Embedding embedding = aiOrchestrator.embed(chunkText, ctx);
+                    points.add(new EmbeddingPoint(
+                        UUID.nameUUIDFromBytes((document.url() + "-" + i).getBytes()),
+                        embedding.vector(),
+                        document.url(),
+                        i,
+                        currentHash
+                    ));
+                } catch (Exception e) {
+                    return ProcessingResult.failed(document, "Embedding failed on chunk " + i + ": " + e.getMessage());
+                }
             }
 
             vectorStore.upsert(points);

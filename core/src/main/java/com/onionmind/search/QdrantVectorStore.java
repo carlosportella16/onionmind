@@ -1,5 +1,8 @@
 package com.onionmind.search;
 
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -25,6 +28,8 @@ import java.util.Map;
 @ConditionalOnProperty(prefix = "embedding", name = "enabled", havingValue = "true")
 public class QdrantVectorStore implements VectorStore {
 
+    private static final Logger log = LoggerFactory.getLogger(QdrantVectorStore.class);
+
     private final HttpClient httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(10))
         .build();
@@ -43,6 +48,20 @@ public class QdrantVectorStore implements VectorStore {
         this.apiKey = apiKey;
         this.collection = collection;
         this.vectorSize = vectorSize;
+    }
+
+    /**
+     * Runs on startup so the collection exists before the first embedding is upserted — without
+     * this, every upsert 404s forever, since Qdrant never creates collections implicitly.
+     * Swallows failures (Qdrant down at boot) so a transient outage doesn't stop the app.
+     */
+    @PostConstruct
+    void ensureCollectionOnStartup() {
+        try {
+            ensureCollection();
+        } catch (Exception e) {
+            log.warn("Could not ensure Qdrant collection '{}' on startup: {}", collection, e.getMessage());
+        }
     }
 
     /** Creates the collection if it doesn't exist yet. Safe to call on every startup. */

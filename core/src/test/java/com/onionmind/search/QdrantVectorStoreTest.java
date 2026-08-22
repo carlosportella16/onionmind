@@ -25,6 +25,7 @@ class QdrantVectorStoreTest {
     private final AtomicReference<String> lastRequestPath = new AtomicReference<>();
     private volatile String nextResponseBody = "{}";
     private volatile int nextResponseStatus = 200;
+    private volatile int nextGetStatus = 200;
 
     @BeforeEach
     void startFakeServer() throws IOException {
@@ -35,9 +36,10 @@ class QdrantVectorStoreTest {
             byte[] body = exchange.getRequestBody().readAllBytes();
             lastRequestBody.set(new String(body, StandardCharsets.UTF_8));
 
+            int status = "GET".equals(exchange.getRequestMethod()) ? nextGetStatus : nextResponseStatus;
             byte[] response = nextResponseBody.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(nextResponseStatus, response.length);
+            exchange.sendResponseHeaders(status, response.length);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(response);
             }
@@ -109,6 +111,37 @@ class QdrantVectorStoreTest {
         boolean unchanged = store.hasUnchangedEmbedding("http://x.onion", "hash1");
 
         assertThat(unchanged).isFalse();
+    }
+
+    @Test
+    void ensureCollectionCreatesItWhenMissing() {
+        nextGetStatus = 404;
+        nextResponseStatus = 200;
+
+        store.ensureCollection();
+
+        assertThat(lastRequestMethod.get()).isEqualTo("PUT");
+        assertThat(lastRequestPath.get()).isEqualTo("/collections/page_chunks");
+        assertThat(lastRequestBody.get()).contains("vectors");
+    }
+
+    @Test
+    void ensureCollectionSkipsCreationWhenAlreadyExists() {
+        nextGetStatus = 200;
+
+        store.ensureCollection();
+
+        // only the existence check (GET) should have happened, no creation PUT
+        assertThat(lastRequestMethod.get()).isEqualTo("GET");
+    }
+
+    @Test
+    void ensureCollectionOnStartupNeverThrowsWhenQdrantIsUnreachable() {
+        server.stop(0); // simulate Qdrant being down at boot
+
+        store.ensureCollectionOnStartup();
+
+        // no exception — a transient outage at startup must not stop the app
     }
 
     @Test

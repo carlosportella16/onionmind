@@ -9,8 +9,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.time.Instant;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Import(TestcontainersConfiguration.class)
@@ -23,7 +21,7 @@ class PageRepositoryTest {
     private PageRepository repository;
 
     private Document doc(String url, String text) {
-        return new Document(url, "tor", "<html>" + text + "</html>", text, DocumentType.HTML, Instant.now());
+        return new Document(url, "tor", "<html>" + text + "</html>", text, DocumentType.HTML);
     }
 
     private Integer versionOf(String url) {

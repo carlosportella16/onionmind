@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: onionmind-core
+  datasource:
+    url: jdbc:postgresql://localhost:5432/onionmind
+    username: onionmind
+    password: ${POSTGRES_PASSWORD:onionmind_dev_only}
+  flyway:
+    enabled: true
+    locations: classpath:db/migrations
+
+server:
+  port: 8081

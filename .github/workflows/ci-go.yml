@@ -1,0 +1,13 @@
+name: CI (Go)
+on:
+  push: { branches: [main], paths: ['crawler/**'] }
+  pull_request: { paths: ['crawler/**'] }
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.23' }
+      - run: go vet ./... && go test ./...
+        working-directory: crawler

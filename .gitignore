@@ -1,0 +1,23 @@
+# Java / Gradle
+core/build/
+core/.gradle/
+*.class
+
+# Go
+crawler/crawler
+crawler/*.exe
+
+# Node
+web/node_modules/
+web/dist/
+
+# Env / IDE
+.env
+*.local
+.idea/
+.vscode/
+*.iml
+
+# macOS
+.DS_Store
+**/.DS_Store

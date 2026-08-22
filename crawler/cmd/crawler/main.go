@@ -55,6 +55,7 @@ func run(configPath string) error {
 	f := frontier.New(cfg.Frontier.Seeds, cfg.Frontier.MaxQueueSize, cfg.Frontier.MaxDepth)
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 	go func() {

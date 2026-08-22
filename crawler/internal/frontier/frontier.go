@@ -52,29 +52,41 @@ func (f *Frontier) Enqueue(parentDepth int, rawHTML []byte, baseURL string) {
 }
 
 func extractLinks(rawHTML []byte, baseURL string) []string {
-	var links []string
 	doc, err := html.Parse(strings.NewReader(string(rawHTML)))
 	if err != nil {
-		return links
+		return nil
 	}
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
-		if n.Type == html.ElementNode && n.Data == "a" {
-			for _, attr := range n.Attr {
-				if attr.Key == "href" {
-					resolved := resolveURL(attr.Val, baseURL)
-					if resolved != "" {
-						links = append(links, resolved)
-					}
-				}
-			}
-		}
-		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
+
+	var links []string
+	for _, href := range anchorHrefs(doc) {
+		if resolved := resolveURL(href, baseURL); resolved != "" {
+			links = append(links, resolved)
 		}
 	}
-	walk(doc)
 	return links
+}
+
+// anchorHrefs walks the parsed HTML tree and collects the href attribute of every <a> tag.
+func anchorHrefs(n *html.Node) []string {
+	var hrefs []string
+	if n.Type == html.ElementNode && n.Data == "a" {
+		if href, ok := attrValue(n, "href"); ok {
+			hrefs = append(hrefs, href)
+		}
+	}
+	for c := n.FirstChild; c != nil; c = c.NextSibling {
+		hrefs = append(hrefs, anchorHrefs(c)...)
+	}
+	return hrefs
+}
+
+func attrValue(n *html.Node, key string) (string, bool) {
+	for _, attr := range n.Attr {
+		if attr.Key == key {
+			return attr.Val, true
+		}
+	}
+	return "", false
 }
 
 func resolveURL(href, base string) string {

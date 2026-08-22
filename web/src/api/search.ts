@@ -17,7 +17,13 @@ export interface SearchResponse {
 }
 
 export async function search(query: string): Promise<SearchResponse> {
-  const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+  const trimmed = query.trim().slice(0, 200);
+  if (!trimmed) {
+    throw new Error('search query must not be empty');
+  }
+
+  const params = new URLSearchParams({ q: trimmed });
+  const res = await fetch(`/api/search?${params.toString()}`);
   if (!res.ok) {
     throw new Error(`search failed: ${res.status}`);
   }

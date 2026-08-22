@@ -18,6 +18,14 @@ repositories {
 	mavenCentral()
 }
 
+sourceSets {
+	main {
+		resources {
+			srcDir '../db'
+		}
+	}
+}
+
 ext {
 	set('springModulithVersion', "2.1.0")
 }

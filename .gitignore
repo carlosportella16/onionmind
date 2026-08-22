@@ -21,3 +21,7 @@ web/dist/
 # macOS
 .DS_Store
 **/.DS_Store
+
+# AI
+.claude/*
+openspec/*

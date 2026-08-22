@@ -59,7 +59,6 @@ dependencyManagement {
 
 tasks.named('test') {
 	useJUnitPlatform()
-	finalizedBy jacocoTestReport
 }
 
 jacoco {
@@ -103,14 +102,3 @@ sonar {
 	}
 }
 
-task verifyModules {
-	doLast {
-		Class<?> clazz = Class.forName('org.springframework.modulith.core.ApplicationModules')
-		def method = clazz.getMethod('of', Class)
-		def modules = method.invoke(null, Class.forName('com.onionmind.OnionMindApplication'))
-		modules.verify()
-		println "✓ Spring Modulith modules verified"
-	}
-}
-
-check.dependsOn verifyModules

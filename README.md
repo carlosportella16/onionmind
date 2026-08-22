@@ -2,7 +2,7 @@
 
 > AI-powered Knowledge Discovery Platform for the Tor Network.
 
-**Current Phase:** Phase 0 complete (verified: schema applies via Flyway, real integration tests, module boundaries enforced) — Phase 1 (Crawler + Full-Text Search) starting
+**Current Phase:** Phase 1 complete (crawler discovers `.onion` pages via Tor, ingestion pipeline sanitizes and versions content, full-text search API + React SPA) — Phase 2 (semantic search) next
 
 **Tech Stack:** Go (crawler) • Java 25 (Spring Boot 4.1 + Spring Modulith) • PostgreSQL • Redpanda • React
 
@@ -62,7 +62,7 @@ Most Tor search engines are link lists without ranking or context. OnionMind cha
 | Phase | Scope | Status | Completion Gate |
 |-------|-------|--------|---|
 | **0** | Repository, CI, Docker Compose, initial schema | ✅ Complete | Infrastructure boots, tests pass |
-| **1** | Crawler + full-text search (real MVP) | 🟡 In Progress | Discover → crawl → index → search in minutes |
+| **1** | Crawler + full-text search (real MVP) | ✅ Complete | Discover → crawl → index → search in minutes |
 | **2** | Semantic search (embeddings + Qdrant) | ⏳ Planned | Concept-based search works |
 | **3** | AI generation (summarize, classify, translate) | ⏳ Planned | New page summarized in minutes, quota never exceeded |
 | **4** | Knowledge graph + versioning | ⏳ Planned | "What changed?" answers correctly |
@@ -86,6 +86,7 @@ Ships a functional Tor search engine without AI:
 
 - **Java 25** (via Gradle toolchain — no manual install needed)
 - **Go 1.27**
+- **Node 22+** (frontend)
 - **Docker + Docker Compose** (PostgreSQL, Redpanda, Redis, Tor proxy)
 - **Make** (optional, crawler convenience)
 
@@ -96,11 +97,11 @@ Ships a functional Tor search engine without AI:
 git clone https://github.com/carlosportella/onionmind.git
 cd onionmind
 
-# Start infrastructure
+# Start infrastructure — postgres, redpanda, redpanda-console, redis, tor
 docker-compose up -d
 
-# Wait for PostgreSQL to be ready (~5 seconds)
-sleep 5
+# Wait for services to report healthy
+docker compose ps
 
 # Build and test Java core
 cd core
@@ -109,22 +110,41 @@ cd core
 # Build Go crawler
 cd ../crawler
 make build
+
+# Install frontend deps
+cd ../web
+npm install
 ```
 
 ### Running
 
 ```bash
-# Terminal 1: Spring Boot API
+# Terminal 1: Spring Boot API (talks to postgres/redpanda on localhost)
 cd core
-./gradlew bootRun
+./gradlew bootRun --args='--spring.profiles.active=sandbox'
 # API available: http://localhost:8081
-
-# Terminal 2: Crawler (once Tor integration is complete)
-cd crawler
-./bin/crawler
 ```
 
-**Search:** http://localhost:8081/api/search?q=bitcoin
+**Note:** `docker-compose.yml`'s `redpanda` service only advertises its
+in-network hostname (`redpanda:9092`) by default for containers on the
+compose network. A Java process running on the host (like `bootRun` above)
+needs the external listener instead — pass
+`--spring.kafka.bootstrap-servers=localhost:19092` if the consumer keeps
+retrying with `UnknownHostException: redpanda`.
+
+```bash
+# Terminal 2: Crawler — build the image once, then run it on the compose network
+cd crawler
+docker build -t onionmind-crawler .
+docker run --rm --network onionmind_default onionmind-crawler
+
+# Terminal 3: Frontend dev server (proxies /api to localhost:8081)
+cd web
+npm run dev
+# UI available: http://localhost:5173
+```
+
+**Search directly against the API:** http://localhost:8081/api/search?q=bitcoin
 
 ---
 
@@ -215,21 +235,25 @@ onionmind/
 │   └── src/
 │       ├── main/java/com/onionmind/
 │       │   ├── ingestion/          # Module: Kafka consumer + pipeline
-│       │   ├── content/            # Module: ContentProcessor plugins
-│       │   ├── search/             # Module: Search REST API
+│       │   │   └── internal/       # PageEntity/PageRepository (versioned persistence)
+│       │   ├── content/            # Module: ContentProcessor plugins (HtmlSanitizerProcessor)
+│       │   ├── search/             # Module: Search REST API (own SQL, no ingestion dep)
 │       │   └── ai/                 # Module: LLM orchestration (stubs Phase 0)
 │       ├── main/resources/
 │       │   ├── application.yml
 │       │   ├── application-sandbox.yml
-│       │   ├── application-prod.yml
-│       │   └── db/migrations/
+│       │   └── application-prod.yml
 │       └── test/java/
-├── crawler/                          # Go — TorConnector implementation
+├── crawler/                          # Go — TorConnector, worker pool, dedup, frontier
 │   ├── Makefile                     # make test, make build, make clean
+│   ├── Dockerfile                   # distroless, non-root
+│   ├── config.yaml                  # workers, seeds, Tor/Redis/Redpanda addresses
 │   ├── go.mod, go.sum
-│   └── cmd/crawler/main.go
-├── web/                              # React — SPA frontend (Phase 1+)
-│   └── src/
+│   ├── cmd/crawler/main.go
+│   └── internal/{config,connector,dedup,frontier,normalizer,publisher,worker}/
+├── web/                               # React SPA — search bar + result list
+│   ├── Dockerfile
+│   └── src/{api,components}/
 ├── openspec/                         # Planning artifacts (OpenSpec)
 │   ├── changes/
 │   │   └── ci-cd-pipeline-setup/   # CI/CD proposal + specs

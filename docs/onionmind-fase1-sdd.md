@@ -1258,37 +1258,39 @@ class Fase1EndToEndTest {
 ## 9. Definition of Done — Fase 1
 
 ### Crawler Go
-- [ ] `TorConnector` implementa `SourceConnector` e busca páginas via SOCKS5h
-- [ ] Circuit breaker abre após 3 falhas consecutivas e reabre após timeout
-- [ ] Worker pool com N goroutines configurável e graceful shutdown via SIGTERM
-- [ ] URLs normalizadas antes do dedup (lowercase, sem fragment, query params ordenados)
-- [ ] Dedup via Redis com TTL configurável
-- [ ] Frontier extrai links `.onion` de páginas coletadas e respeita `max_depth`
-- [ ] Politeness delay entre requests ao mesmo host
-- [ ] Eventos publicados no Redpanda com `source_type: "tor"` e key = URL
-- [ ] Container distroless, non-root
-- [ ] Testes unitários: normalizer, dedup, frontier link extraction
+- [x] `TorConnector` implementa `SourceConnector` e busca páginas via SOCKS5h
+- [x] Circuit breaker abre após 3 falhas consecutivas e reabre após timeout
+- [x] Worker pool com N goroutines configurável e graceful shutdown via SIGTERM
+- [x] URLs normalizadas antes do dedup (lowercase, sem fragment, query params ordenados)
+- [x] Dedup via Redis com TTL configurável
+- [x] Frontier extrai links `.onion` de páginas coletadas e respeita `max_depth`
+- [x] Politeness delay entre requests ao mesmo host
+- [x] Eventos publicados no Redpanda com `source_type: "tor"` e key = URL
+- [x] Container distroless, non-root
+- [x] Testes unitários: normalizer, dedup, frontier link extraction
 
 ### Monolito Java
-- [ ] `RawPageConsumer` consome do tópico `raw-pages` e delega ao `IngestionPipeline`
-- [ ] `HtmlSanitizerProcessor` sanitiza HTML (OWASP, allowlist) e extrai texto via Jsoup
-- [ ] `PageRepository.upsertWithVersioning()` insere, atualiza ou arquiva versão anterior
-- [ ] Migration `V2__fulltext_search.sql` adiciona `search_vector` (tsvector STORED + GIN)
-- [ ] `SearchController` expõe `GET /api/search?q=...` com `websearch_to_tsquery` e `ts_headline`
-- [ ] `GET /api/stats` retorna contadores básicos (total pages, versions, sources)
-- [ ] Evento com JSON malformado é logado e descartado, não poisona o consumer group
-- [ ] Testes unitários: sanitizer (XSS, empty, short text)
-- [ ] Teste de integração end-to-end: evento → persistência → busca retorna resultado
-- [ ] Teste de versionamento: conteúdo diferente incrementa version e arquiva anterior
+- [x] `RawPageConsumer` consome do tópico `raw-pages` e delega ao `IngestionPipeline`
+- [x] `HtmlSanitizerProcessor` sanitiza HTML (OWASP, allowlist) e extrai texto via Jsoup
+- [x] `PageRepository.upsertWithVersioning()` insere, atualiza ou arquiva versão anterior
+- [x] Migration `V2__fulltext_search.sql` adiciona `search_vector` (tsvector STORED + GIN)
+- [x] `SearchController` expõe `GET /api/search?q=...` com `websearch_to_tsquery` e `ts_headline`
+- [x] `GET /api/stats` retorna contadores básicos (total pages, versions, sources)
+- [x] Evento com JSON malformado é logado e descartado, não poisona o consumer group
+- [x] Testes unitários: sanitizer (XSS, empty, short text)
+- [x] Teste de integração end-to-end: evento → persistência → busca retorna resultado
+- [x] Teste de versionamento: conteúdo diferente incrementa version e arquiva anterior
 
 ### Frontend
-- [ ] React SPA com barra de busca e lista de resultados
-- [ ] Exibe snippet com highlight, URL, versão e datas
-- [ ] Proxy para `/api` configurado no dev server
+- [x] React SPA com barra de busca e lista de resultados
+- [x] Exibe snippet com highlight, URL, versão e datas
+- [x] Proxy para `/api` configurado no dev server
 
 ### Infraestrutura
-- [ ] `docker-compose.yml` atualizado com Redis e Tor
-- [ ] CI passa (lint + testes Java e Go)
+- [x] `docker-compose.yml` atualizado com Redis e Tor
+- [x] CI passa (lint + testes Java e Go)
 
 ### Gate final
 Descobrir um novo `.onion`, indexá-lo e encontrá-lo por busca textual em menos de 5 minutos, de forma repetível e sem intervenção manual.
+
+**✅ Validado em 2026-08-22** contra a rede Tor real (seeds `ahmia.fi` + espelho `.onion` do Ahmia): dois ciclos completos, ~14s e ~5s respectivamente entre o crawler descobrir a página e ela aparecer em `GET /api/search`, sem intervenção manual além dos serviços já no ar. Ver `openspec/changes/phase1-crawler-search/tasks.md` seção 16 pro detalhamento e o bug de base64 encontrado/corrigido durante a validação.

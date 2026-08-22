@@ -24,7 +24,11 @@ jobs:
       - name: Check coverage threshold
         working-directory: crawler
         run: |
-          COVERAGE=$(go tool cover -func=coverage.out | tail -1 | grep -oP '\d+\.\d+(?=%)')
+          # cmd/crawler/main.go is bootstrap wiring (config -> Tor/Redis/Redpanda ->
+          # worker pool) that only exercises meaningfully against live infra; excluded
+          # from the gate the same way core/CoreApplication.class is excluded in jacoco.
+          grep -v 'cmd/crawler/main.go' coverage.out > coverage.filtered.out
+          COVERAGE=$(go tool cover -func=coverage.filtered.out | tail -1 | grep -oP '\d+\.\d+(?=%)')
           echo "Coverage: $COVERAGE%"
           COVERAGE_INT=$(awk "BEGIN {printf \"%.0f\", $COVERAGE}")
           if [ "$COVERAGE_INT" -lt 80 ]; then

@@ -3,18 +3,23 @@ package com.onionmind.content;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.HexFormat;
 
 public record Document(
     String url, String sourceType, String rawHtml, String extractedText,
-    String contentHash, DocumentType type
+    DocumentType type, Instant fetchedAt, String contentHash
 ) {
+    public Document(String url, String sourceType, String rawHtml, String extractedText, DocumentType type, Instant fetchedAt) {
+        this(url, sourceType, rawHtml, extractedText, type, fetchedAt, null);
+    }
+
     public Document(String url, String sourceType, String rawHtml, String extractedText, DocumentType type) {
-        this(url, sourceType, rawHtml, extractedText, null, type);
+        this(url, sourceType, rawHtml, extractedText, type, null, null);
     }
 
     public Document withExtractedText(String text) {
-        return new Document(url, sourceType, rawHtml, text, contentHash, type);
+        return new Document(url, sourceType, rawHtml, text, type, fetchedAt, contentHash);
     }
 
     /** contentHash if the caller (ingestion pipeline) already computed one, otherwise a SHA-256 of extractedText. */

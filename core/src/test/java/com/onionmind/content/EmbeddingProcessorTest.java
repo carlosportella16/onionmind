@@ -81,7 +81,7 @@ class EmbeddingProcessorTest {
         ProcessingResult result = processor.process(doc);
 
         assertThat(result.status()).isEqualTo(ProcessingResult.Status.FAILED);
-        assertThat(result.error()).contains("chunk 0");
+        assertThat(result.error()).contains("simulated failure");
         assertThat(store.upsertCalls).isZero();
     }
 

@@ -44,21 +44,25 @@ public class EmbeddingProcessor implements ContentProcessor {
             return ProcessingResult.skipped(document, "no extracted text to embed");
         }
 
-        String currentHash = document.resolvedContentHash();
+        // Any failure here (Qdrant/Ollama unreachable, network error) must degrade to a
+        // FAILED result, never an uncaught exception — the rest of the ingestion pipeline
+        // (full-text indexing, persistence) must not be blocked by this being AI/network-backed
+        // (SDD Fase 2, sec. 3.6 — eventual consistency, observable but non-blocking).
+        try {
+            String currentHash = document.resolvedContentHash();
 
-        if (vectorStore.hasUnchangedEmbedding(document.url(), currentHash)) {
-            return ProcessingResult.unchanged(document);
-        }
+            if (vectorStore.hasUnchangedEmbedding(document.url(), currentHash)) {
+                return ProcessingResult.unchanged(document);
+            }
 
-        List<String> chunks = TextChunker.chunk(document.extractedText(), chunkSize, overlapPercent);
-        List<EmbeddingPoint> points = new ArrayList<>(chunks.size());
+            List<String> chunks = TextChunker.chunk(document.extractedText(), chunkSize, overlapPercent);
+            List<EmbeddingPoint> points = new ArrayList<>(chunks.size());
 
-        for (int i = 0; i < chunks.size(); i++) {
-            String chunkText = chunks.get(i);
-            TaskContext ctx = new TaskContext(
-                TaskContext.TaskType.EMBED, chunkText.length() / 4, null, false, false, null, 0
-            );
-            try {
+            for (int i = 0; i < chunks.size(); i++) {
+                String chunkText = chunks.get(i);
+                TaskContext ctx = new TaskContext(
+                    TaskContext.TaskType.EMBED, chunkText.length() / 4, null, false, false, null, 0
+                );
                 Embedding embedding = aiOrchestrator.embed(chunkText, ctx);
                 points.add(new EmbeddingPoint(
                     UUID.nameUUIDFromBytes((document.url() + "-" + i).getBytes()),
@@ -67,13 +71,13 @@ public class EmbeddingProcessor implements ContentProcessor {
                     i,
                     currentHash
                 ));
-            } catch (Exception e) {
-                return ProcessingResult.failed(document, "Embedding failed on chunk " + i + ": " + e.getMessage());
             }
-        }
 
-        vectorStore.upsert(points);
-        return ProcessingResult.success(document);
+            vectorStore.upsert(points);
+            return ProcessingResult.success(document);
+        } catch (Exception e) {
+            return ProcessingResult.failed(document, "Embedding failed: " + e.getMessage());
+        }
     }
 
     @Override

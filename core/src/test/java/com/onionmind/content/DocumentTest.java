@@ -2,13 +2,16 @@ package com.onionmind.content;
 
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class DocumentTest {
 
     @Test
     void withExtractedTextUpdatesOnlyExtractedText() {
-        Document original = new Document("http://example.onion", "tor", "<html></html>", null, DocumentType.HTML);
+        Instant fetchedAt = Instant.parse("2026-08-22T00:00:00Z");
+        Document original = new Document("http://example.onion", "tor", "<html></html>", null, DocumentType.HTML, fetchedAt);
 
         Document updated = original.withExtractedText("plain text content");
 
@@ -16,6 +19,7 @@ class DocumentTest {
         assertThat(updated.sourceType()).isEqualTo(original.sourceType());
         assertThat(updated.rawHtml()).isEqualTo(original.rawHtml());
         assertThat(updated.type()).isEqualTo(original.type());
+        assertThat(updated.fetchedAt()).isEqualTo(original.fetchedAt());
         assertThat(updated.extractedText()).isEqualTo("plain text content");
         assertThat(original.extractedText()).isNull();
     }
@@ -40,7 +44,7 @@ class DocumentTest {
 
     @Test
     void resolvedContentHashReturnsExplicitHashWhenPresent() {
-        Document doc = new Document("http://example.onion", "tor", "<html></html>", "text", "explicit-hash", DocumentType.HTML);
+        Document doc = new Document("http://example.onion", "tor", "<html></html>", "text", DocumentType.HTML, null, "explicit-hash");
 
         assertThat(doc.resolvedContentHash()).isEqualTo("explicit-hash");
     }

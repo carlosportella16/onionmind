@@ -19,4 +19,36 @@ class DocumentTest {
         assertThat(updated.extractedText()).isEqualTo("plain text content");
         assertThat(original.extractedText()).isNull();
     }
+
+    @Test
+    void legacyConstructorDefaultsContentHashToNull() {
+        Document doc = new Document("http://example.onion", "tor", "<html></html>", "text", DocumentType.HTML);
+
+        assertThat(doc.contentHash()).isNull();
+    }
+
+    @Test
+    void resolvedContentHashComputesSha256WhenHashMissing() {
+        Document doc = new Document("http://example.onion", "tor", "<html></html>", "same content", DocumentType.HTML);
+
+        String hash1 = doc.resolvedContentHash();
+        String hash2 = doc.resolvedContentHash();
+
+        assertThat(hash1).isNotNull().hasSize(64); // hex-encoded SHA-256
+        assertThat(hash1).isEqualTo(hash2);
+    }
+
+    @Test
+    void resolvedContentHashReturnsExplicitHashWhenPresent() {
+        Document doc = new Document("http://example.onion", "tor", "<html></html>", "text", "explicit-hash", DocumentType.HTML);
+
+        assertThat(doc.resolvedContentHash()).isEqualTo("explicit-hash");
+    }
+
+    @Test
+    void resolvedContentHashIsNullWhenNoExtractedText() {
+        Document doc = new Document("http://example.onion", "tor", "<html></html>", null, DocumentType.HTML);
+
+        assertThat(doc.resolvedContentHash()).isNull();
+    }
 }

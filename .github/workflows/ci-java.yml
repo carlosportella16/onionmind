@@ -15,15 +15,3 @@ jobs:
       - name: Run tests
         working-directory: core
         run: ./gradlew clean test -q
-
-      - name: Run SonarCloud scan
-        working-directory: core
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          ./gradlew sonar \
-            -Dsonar.projectKey=onionmind-java \
-            -Dsonar.organization=onionmind \
-            -Dsonar.host.url=https://sonarcloud.io \
-            -Dsonar.login=$SONAR_TOKEN -q

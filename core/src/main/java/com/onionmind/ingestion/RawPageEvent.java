@@ -13,6 +13,6 @@ public record RawPageEvent(
     @JsonProperty("fetched_at") Instant fetchedAt
 ) {
     public Document toDocument() {
-        return new Document(url, sourceType, html, null, DocumentType.HTML, fetchedAt);
+        return new Document(url, sourceType, html, null, DocumentType.HTML);
     }
 }

@@ -5,8 +5,6 @@ import com.onionmind.content.DocumentType;
 import com.onionmind.content.ProcessingResult;
 import org.junit.jupiter.api.Test;
 
-import java.time.Instant;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 class HtmlSanitizerProcessorTest {
@@ -14,7 +12,7 @@ class HtmlSanitizerProcessorTest {
     private final HtmlSanitizerProcessor processor = new HtmlSanitizerProcessor();
 
     private Document docWithHtml(String html) {
-        return new Document("http://example.onion", "tor", html, null, DocumentType.HTML, Instant.now());
+        return new Document("http://example.onion", "tor", html, null, DocumentType.HTML);
     }
 
     @Test

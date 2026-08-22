@@ -4,7 +4,7 @@ on:
   pull_request: { paths: ['core/**', 'db/**'] }
 
 jobs:
-  java:
+  ci-java:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

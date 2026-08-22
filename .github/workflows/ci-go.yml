@@ -4,7 +4,7 @@ on:
   pull_request: { paths: ['crawler/**'] }
 
 jobs:
-  go:
+  ci-go:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

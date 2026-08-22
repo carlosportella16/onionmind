@@ -6,6 +6,7 @@ core/.gradle/
 # Go
 crawler/crawler
 crawler/*.exe
+crawler/bin/
 
 # Node
 web/node_modules/

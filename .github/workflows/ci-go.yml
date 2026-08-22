@@ -1,13 +1,15 @@
 name: CI (Go)
 on:
-  push: { branches: [main], paths: ['crawler/**'] }
-  pull_request: { paths: ['crawler/**'] }
+  push: { branches: [main] }
+  pull_request: {}
 
 jobs:
-  go:
+  ci-go:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with: { go-version: '1.27' }
 
@@ -17,31 +19,16 @@ jobs:
 
       - name: Run tests with coverage
         working-directory: crawler
+        run: go test -coverprofile=coverage.out ./...
+
+      - name: Check coverage threshold
+        working-directory: crawler
         run: |
-          OUTPUT=$(go test -cover ./... 2>&1)
-          echo "$OUTPUT"
-          COVERAGE_LINE=$(echo "$OUTPUT" | grep "coverage:" | tail -1)
-          if [ -z "$COVERAGE_LINE" ]; then
-            echo "❌ No coverage output found"
-            exit 1
-          fi
-          COVERAGE=$(echo "$COVERAGE_LINE" | grep -oP 'coverage: \K[0-9.]+' | head -1)
+          COVERAGE=$(go tool cover -func=coverage.out | tail -1 | grep -oP '\d+\.\d+(?=%)')
           echo "Coverage: $COVERAGE%"
           COVERAGE_INT=$(awk "BEGIN {printf \"%.0f\", $COVERAGE}")
-          if [ $COVERAGE_INT -lt 80 ]; then
+          if [ "$COVERAGE_INT" -lt 80 ]; then
             echo "❌ Coverage $COVERAGE% is below 80% threshold"
             exit 1
           fi
           echo "✓ Coverage $COVERAGE% meets 80% threshold"
-
-      - name: Build crawler
-        working-directory: crawler
-        run: make build
-
-      - name: Upload coverage report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: go-coverage-report
-          path: crawler/bin/
-          retention-days: 90

@@ -53,7 +53,7 @@ class SemanticSearchServiceTest {
 
     @Test
     void unavailableWhenEitherDependencyIsMissing() {
-        var service = new SemanticSearchService(Optional.empty(), Optional.of(new FakeAIOrchestrator()), jdbc);
+        var service = new SemanticSearchService(Optional.empty(), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
 
         assertThat(service.isAvailable()).isFalse();
         assertThat(service.search("anything", 5)).isEmpty();
@@ -63,7 +63,7 @@ class SemanticSearchServiceTest {
     void hydratesVectorHitsWithPageMetadataFromPostgres() {
         insertPage("http://concept.onion", "conteudo sobre moeda digital anonima");
         var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://concept.onion", 0, 0.87)));
-        var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc);
+        var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
 
         var results = service.search("criptomoedas", 5);
 
@@ -80,7 +80,7 @@ class SemanticSearchServiceTest {
             new SemanticSearchHit("http://multi.onion", 0, 0.4),
             new SemanticSearchHit("http://multi.onion", 1, 0.9)
         ));
-        var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc);
+        var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
 
         var results = service.search("query", 5);
 
@@ -89,9 +89,29 @@ class SemanticSearchServiceTest {
     }
 
     @Test
+    void hitsBelowMinScoreAreDroppedEvenIfQdrantReturnedThem() {
+        // Qdrant's k-NN always returns topK nearest points, even when nothing is relevant —
+        // the service must apply its own relevance floor rather than trusting every hit.
+        insertPage("http://unrelated.onion", "completely unrelated content");
+        var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://unrelated.onion", 0, 0.2)));
+        var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
+
+        assertThat(service.search("query", 5)).isEmpty();
+    }
+
+    @Test
+    void hitsAtOrAboveMinScoreAreKept() {
+        insertPage("http://relevant.onion", "relevant content");
+        var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://relevant.onion", 0, 0.5)));
+        var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
+
+        assertThat(service.search("query", 5)).hasSize(1);
+    }
+
+    @Test
     void noVectorHitsReturnsEmptyWithoutQueryingPostgres() {
         var store = new FakeVectorStore(List.of());
-        var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc);
+        var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
 
         assertThat(service.search("nothing matches", 5)).isEmpty();
     }

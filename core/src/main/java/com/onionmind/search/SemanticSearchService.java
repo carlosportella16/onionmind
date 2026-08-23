@@ -2,6 +2,7 @@ package com.onionmind.search;
 
 import com.onionmind.ai.AIOrchestrator;
 import com.onionmind.ai.TaskContext;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -27,13 +28,16 @@ public class SemanticSearchService {
     private final Optional<VectorStore> vectorStore;
     private final Optional<AIOrchestrator> aiOrchestrator;
     private final JdbcTemplate jdbc;
+    private final double minScore;
 
     public SemanticSearchService(Optional<VectorStore> vectorStore,
                                   Optional<AIOrchestrator> aiOrchestrator,
-                                  JdbcTemplate jdbc) {
+                                  JdbcTemplate jdbc,
+                                  @Value("${embedding.min-score:0.5}") double minScore) {
         this.vectorStore = vectorStore;
         this.aiOrchestrator = aiOrchestrator;
         this.jdbc = jdbc;
+        this.minScore = minScore;
     }
 
     public boolean isAvailable() {
@@ -49,14 +53,17 @@ public class SemanticSearchService {
         float[] queryVector = aiOrchestrator.get().embed(query, ctx).vector();
 
         List<SemanticSearchHit> hits = vectorStore.get().search(queryVector, topK);
-        if (hits.isEmpty()) {
-            return List.of();
-        }
 
-        // A page can match on more than one chunk — keep its best score.
+        // Qdrant's k-NN always returns topK nearest points, even when nothing is actually
+        // relevant (e.g. a small corpus) — drop anything below the relevance floor.
         Map<String, Double> bestScoreByUrl = new LinkedHashMap<>();
         for (SemanticSearchHit hit : hits) {
-            bestScoreByUrl.merge(hit.url(), hit.score(), Math::max);
+            if (hit.score() >= minScore) {
+                bestScoreByUrl.merge(hit.url(), hit.score(), Math::max);
+            }
+        }
+        if (bestScoreByUrl.isEmpty()) {
+            return List.of();
         }
 
         return hydrate(bestScoreByUrl);

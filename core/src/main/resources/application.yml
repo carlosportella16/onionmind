@@ -45,3 +45,9 @@ embedding:
   chunk-overlap-percent: 15
   batch-size: 10
   backfill-interval-ms: 300000
+  # Cosine similarity floor for semantic search hits — Qdrant's k-NN always returns topK
+  # nearest points even when nothing is actually relevant (small corpus, unrelated query).
+  # nomic-embed-text on short/generic text clusters tightly (~0.4-0.5 even for unrelated
+  # pairs), so this must stay low enough to not false-negative real matches — tune per
+  # embedding model/corpus, this is a floor not a curated relevance score.
+  min-score: 0.35

@@ -1,6 +1,8 @@
 package com.onionmind.ingestion;
 
 import com.onionmind.content.ContentProcessor;
+import com.onionmind.content.EmbeddingOutcome;
+import com.onionmind.content.EmbeddingProcessor;
 import com.onionmind.content.ProcessingResult;
 import com.onionmind.ingestion.internal.PageRepository;
 import org.slf4j.Logger;
@@ -27,11 +29,15 @@ public class IngestionPipeline {
     @Transactional
     public void process(RawPageEvent event) {
         var doc = event.toDocument();
+        EmbeddingOutcome embeddingOutcome = null;
 
         for (var processor : processors) {
             if (!processor.supports(doc.type())) continue;
 
             var result = processor.process(doc);
+            if (processor instanceof EmbeddingProcessor) {
+                embeddingOutcome = EmbeddingOutcome.from(result);
+            }
             if (result.status() == ProcessingResult.Status.FAILED) {
                 log.warn("Processor {} failed for {}: {}",
                     processor.getClass().getSimpleName(), doc.url(), result.error());
@@ -41,7 +47,7 @@ public class IngestionPipeline {
         }
 
         if (doc.extractedText() != null && !doc.extractedText().isBlank()) {
-            repository.upsertWithVersioning(doc);
+            repository.upsertWithVersioning(doc, embeddingOutcome);
         } else {
             log.info("Skipping {} — no extractable text", doc.url());
         }

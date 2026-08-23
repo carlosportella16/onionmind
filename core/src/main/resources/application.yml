@@ -5,6 +5,11 @@ spring:
     url: jdbc:postgresql://localhost:5432/onionmind
     username: onionmind
     password: ${POSTGRES_PASSWORD:onionmind_dev_only}
+    hikari:
+      # Fase 2+: full-text e vetorial passaram a rodar em paralelo por request
+      # (SearchController) — sem teto, uma query patológica em qualquer um dos
+      # dois trava a request inteira (master-sdd sec. 9).
+      connection-init-sql: "SET statement_timeout = 2000"
   flyway:
     enabled: true
     locations: classpath:migrations
@@ -39,3 +44,4 @@ embedding:
   chunk-size: 512
   chunk-overlap-percent: 15
   batch-size: 10
+  backfill-interval-ms: 300000

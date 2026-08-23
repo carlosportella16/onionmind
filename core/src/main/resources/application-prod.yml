@@ -39,3 +39,4 @@ embedding:
   chunk-size: 512
   chunk-overlap-percent: 15
   batch-size: 100
+  min-score: 0.35

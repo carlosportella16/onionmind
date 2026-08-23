@@ -6,6 +6,10 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password:
+    hikari:
+      # Overrides application.yml's Postgres-only "SET statement_timeout" — H2 doesn't
+      # understand that syntax, this profile only runs CoreApplicationTests.
+      connection-init-sql: "SELECT 1"
   flyway:
     enabled: false
 

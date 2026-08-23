@@ -4,6 +4,7 @@ import type { SearchResult } from '../api/search';
 interface Props {
   results: SearchResult[];
   total: number;
+  hasSearched: boolean;
 }
 
 // O backend só emite <b> pra destacar o termo buscado (ts_headline), mas o
@@ -13,17 +14,49 @@ function sanitizeSnippet(snippet: string): string {
   return DOMPurify.sanitize(snippet, { ALLOWED_TAGS: ['b'], ALLOWED_ATTR: [] });
 }
 
-export function ResultList({ results, total }: Readonly<Props>) {
+function formatDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+export function ResultList({ results, total, hasSearched }: Readonly<Props>) {
+  if (!hasSearched) {
+    return null;
+  }
+
+  if (results.length === 0) {
+    return (
+      <div className="results">
+        <p className="empty-state">$ nenhum resultado encontrado</p>
+      </div>
+    );
+  }
+
   return (
-    <div>
-      <p>{total} resultados</p>
-      {results.map((r) => (
-        <div key={r.id}>
-          <a href={r.url}>{r.url}</a>
-          <span> v{r.version}</span>
-          <p dangerouslySetInnerHTML={{ __html: sanitizeSnippet(r.snippet) }} />
-        </div>
-      ))}
+    <div className="results">
+      <p className="results-count">
+        <span className="results-count-number">{total}</span> resultado{total === 1 ? '' : 's'}
+      </p>
+
+      <div className="results-list">
+        {results.map((r, i) => (
+          <div className="result-row" key={r.id}>
+            <div className="result-line">
+              <span className="result-branch">{i === results.length - 1 ? '└─' : '├─'}</span>
+              <a href={r.url} target="_blank" rel="noreferrer">
+                {r.url}
+              </a>
+              <span className="result-version">v{r.version}</span>
+            </div>
+            <p
+              className="result-snippet"
+              dangerouslySetInnerHTML={{ __html: sanitizeSnippet(r.snippet) }}
+            />
+            <div className="result-meta">
+              score {r.rank.toFixed(2)} · indexado {formatDate(r.firstSeenAt)} · fonte {r.sourceType}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

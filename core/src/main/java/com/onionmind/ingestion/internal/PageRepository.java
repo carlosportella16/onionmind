@@ -2,6 +2,7 @@ package com.onionmind.ingestion.internal;
 
 import com.google.common.hash.Hashing;
 import com.onionmind.content.Document;
+import com.onionmind.content.EmbeddingOutcome;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -18,6 +19,11 @@ public class PageRepository {
     }
 
     public void upsertWithVersioning(Document doc) {
+        upsertWithVersioning(doc, null);
+    }
+
+    /** @param embeddingOutcome null when EmbeddingProcessor isn't in this build's pipeline. */
+    public void upsertWithVersioning(Document doc, EmbeddingOutcome embeddingOutcome) {
         String hash = sha256(doc.extractedText());
         var existing = findByUrl(doc.url());
 
@@ -34,6 +40,18 @@ public class PageRepository {
                 touchLastSeen(current.id());
             }
         }
+
+        if (embeddingOutcome != null) {
+            updateEmbeddingStatus(doc.url(), embeddingOutcome);
+        }
+    }
+
+    private void updateEmbeddingStatus(String url, EmbeddingOutcome outcome) {
+        jdbc.update("""
+            UPDATE pages
+            SET embedding_status = ?, embedding_attempted_at = now(), embedding_error_message = ?
+            WHERE url = ?
+            """, outcome.status(), outcome.errorMessage(), url);
     }
 
     private void insertNew(Document doc, String hash) {

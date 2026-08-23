@@ -3,6 +3,7 @@ package com.onionmind.ingestion.internal;
 import com.onionmind.TestcontainersConfiguration;
 import com.onionmind.content.Document;
 import com.onionmind.content.DocumentType;
+import com.onionmind.content.EmbeddingOutcome;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -33,6 +34,10 @@ class PageRepositoryTest {
             SELECT count(*) FROM page_versions
             WHERE page_id = (SELECT id FROM pages WHERE url = ?)
             """, Integer.class, url);
+    }
+
+    private String embeddingStatusOf(String url) {
+        return jdbc.queryForObject("SELECT embedding_status FROM pages WHERE url = ?", String.class, url);
     }
 
     @org.junit.jupiter.api.BeforeEach
@@ -69,5 +74,37 @@ class PageRepositoryTest {
 
         assertThat(versionOf(url)).isEqualTo(2);
         assertThat(archivedCountFor(url)).isEqualTo(1);
+    }
+
+    @Test
+    void newPageWithoutEmbeddingOutcomeStaysAtDefaultPendingStatus() {
+        String url = "http://no-embedding-" + System.nanoTime() + ".onion";
+
+        repository.upsertWithVersioning(doc(url, "content with no embedding module in this build"));
+
+        assertThat(embeddingStatusOf(url)).isEqualTo("pending");
+    }
+
+    @Test
+    void embeddingOutcomeIsPersistedOnNewPage() {
+        String url = "http://embedded-" + System.nanoTime() + ".onion";
+
+        repository.upsertWithVersioning(doc(url, "content that got embedded"),
+            new EmbeddingOutcome(EmbeddingOutcome.EMBEDDED, null));
+
+        assertThat(embeddingStatusOf(url)).isEqualTo(EmbeddingOutcome.EMBEDDED);
+    }
+
+    @Test
+    void failedEmbeddingOutcomeIsPersistedWithErrorMessage() {
+        String url = "http://embed-failed-" + System.nanoTime() + ".onion";
+
+        repository.upsertWithVersioning(doc(url, "content whose embedding failed"),
+            new EmbeddingOutcome(EmbeddingOutcome.FAILED_TRANSIENT, "ollama unreachable"));
+
+        assertThat(embeddingStatusOf(url)).isEqualTo(EmbeddingOutcome.FAILED_TRANSIENT);
+        String errorMessage = jdbc.queryForObject(
+            "SELECT embedding_error_message FROM pages WHERE url = ?", String.class, url);
+        assertThat(errorMessage).isEqualTo("ollama unreachable");
     }
 }

@@ -2,6 +2,8 @@ package com.onionmind.ingestion;
 
 import com.onionmind.content.ContentProcessor;
 import com.onionmind.content.Document;
+import com.onionmind.content.EmbeddingOutcome;
+import com.onionmind.content.EmbeddingProcessor;
 import com.onionmind.content.ProcessingResult;
 import com.onionmind.ingestion.internal.PageRepository;
 import org.junit.jupiter.api.Test;
@@ -15,6 +17,7 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -50,7 +53,8 @@ class IngestionPipelineTest {
         inOrder.verify(first).process(any());
         inOrder.verify(second).process(any());
 
-        verify(repository).upsertWithVersioning(argThat(d -> d.extractedText().equals("final full text content here")));
+        verify(repository).upsertWithVersioning(
+            argThat(d -> d.extractedText().equals("final full text content here")), isNull());
     }
 
     @Test
@@ -63,7 +67,8 @@ class IngestionPipelineTest {
         var pipeline = new IngestionPipeline(List.of(first, second), repository);
         pipeline.process(event());
 
-        verify(repository).upsertWithVersioning(argThat(d -> d.extractedText().equals("text from the first processor")));
+        verify(repository).upsertWithVersioning(
+            argThat(d -> d.extractedText().equals("text from the first processor")), isNull());
     }
 
     @Test
@@ -74,5 +79,41 @@ class IngestionPipelineTest {
         pipeline.process(event());
 
         verifyNoInteractions(repository);
+    }
+
+    @Test
+    void embeddingProcessorOutcomeIsPassedToRepository() {
+        Document afterSanitize = event().toDocument().withExtractedText("some page text here");
+        ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
+
+        EmbeddingProcessor embedding = mock(EmbeddingProcessor.class);
+        lenient().when(embedding.order()).thenReturn(100);
+        lenient().when(embedding.supports(any())).thenReturn(true);
+        lenient().when(embedding.process(any())).thenReturn(ProcessingResult.success(afterSanitize));
+
+        var pipeline = new IngestionPipeline(List.of(sanitizer, embedding), repository);
+        pipeline.process(event());
+
+        verify(repository).upsertWithVersioning(any(),
+            argThat(outcome -> outcome != null && outcome.status().equals(EmbeddingOutcome.EMBEDDED)));
+    }
+
+    @Test
+    void failedEmbeddingOutcomeCarriesTheErrorMessage() {
+        Document afterSanitize = event().toDocument().withExtractedText("some page text here");
+        ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
+
+        EmbeddingProcessor embedding = mock(EmbeddingProcessor.class);
+        lenient().when(embedding.order()).thenReturn(100);
+        lenient().when(embedding.supports(any())).thenReturn(true);
+        lenient().when(embedding.process(any())).thenReturn(ProcessingResult.failed(afterSanitize, "ollama unreachable"));
+
+        var pipeline = new IngestionPipeline(List.of(sanitizer, embedding), repository);
+        pipeline.process(event());
+
+        verify(repository).upsertWithVersioning(any(),
+            argThat(outcome -> outcome != null
+                && outcome.status().equals(EmbeddingOutcome.FAILED_TRANSIENT)
+                && outcome.errorMessage().equals("ollama unreachable")));
     }
 }

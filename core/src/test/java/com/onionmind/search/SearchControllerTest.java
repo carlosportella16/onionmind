@@ -98,4 +98,11 @@ class SearchControllerTest {
         assertThat(response.getBody().results()).isEmpty();
         assertThat(response.getBody().total()).isEqualTo(0);
     }
+
+    @Test
+    void semanticEndpointReturns503WhenEmbeddingIsDisabled() {
+        var response = rest.getForEntity(baseUrl() + "/search/semantic?q=bitcoin", SearchResponse.class);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+    }
 }

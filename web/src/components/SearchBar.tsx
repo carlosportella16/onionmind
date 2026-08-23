@@ -40,8 +40,9 @@ export function SearchBar({ onSearch }: Readonly<Props>) {
           <span className="toggle-thumb" />
         </span>
         <span>
-          busca_semantica <span className="toggle-state">// {semantic ? 'on' : 'off'}</span> —
-          busca por conceito, não só por palavra literal
+          busca_semantica{' '}
+          <span className="toggle-state">{`// ${semantic ? 'on' : 'off'}`}</span> — busca por
+          conceito, não só por palavra literal
         </span>
       </label>
     </div>

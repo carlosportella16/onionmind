@@ -122,6 +122,17 @@ class DefaultAIOrchestratorTest {
     }
 
     @Test
+    void detectLanguageRunsThroughTheSameLoop() {
+        ollama.script(ok("{\"language\":\"en\",\"confidence\":0.95}"));
+
+        LanguageDetection detection = orchestrator.detectLanguage(TEXT,
+            TaskContext.batch(TaskContext.TaskType.DETECT_LANGUAGE, 100, null, false));
+
+        assertThat(detection.code()).isEqualTo("en");
+        assertThat(detection.confidence()).isEqualTo(0.95);
+    }
+
+    @Test
     void embedDelegatesToTheEmbedderNotTheLadder() {
         embedServer.responseBody = "{\"embeddings\":[[0.5,0.6,0.7]]}";
 

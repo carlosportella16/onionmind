@@ -36,6 +36,11 @@ public class OllamaAIOrchestrator implements AIOrchestrator {
     }
 
     @Override
+    public LanguageDetection detectLanguage(String text, TaskContext ctx) {
+        throw new UnsupportedOperationException("Detecção de idioma chega na Fase 3 — ligue ai.enabled");
+    }
+
+    @Override
     public Embedding embed(String text, TaskContext ctx) {
         return embedder.embed(text);
     }

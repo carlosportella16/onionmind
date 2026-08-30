@@ -4,7 +4,7 @@ public record TaskContext(
     TaskType type, int approxTokens, String sourceLanguage,
     boolean critical, boolean interactive, Double previousConfidence, int attemptNumber
 ) {
-    public enum TaskType { SUMMARIZE, CLASSIFY, TRANSLATE, EXTRACT_ENTITIES, EMBED }
+    public enum TaskType { SUMMARIZE, CLASSIFY, TRANSLATE, DETECT_LANGUAGE, EXTRACT_ENTITIES, EMBED }
 
     /** Batch (non-interactive) context — the only kind Fase 3 produces. */
     public static TaskContext batch(TaskType type, int approxTokens, String sourceLanguage, boolean critical) {

@@ -92,6 +92,16 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
     }
 
     @Override
+    public LanguageDetection detectLanguage(String text, TaskContext ctx) {
+        CompletionRequest request = new CompletionRequest(
+            "Identifique o idioma predominante do texto. Responda SOMENTE com JSON: "
+                + "{\"language\": \"<código iso-639-1>\", \"confidence\": <0 a 1>}.",
+            text);
+        ValidatedResult r = execute(text, request, ctx);
+        return new LanguageDetection(r.primary(), r.confidence());
+    }
+
+    @Override
     public Embedding embed(String text, TaskContext ctx) {
         return embedder.embed(text);
     }

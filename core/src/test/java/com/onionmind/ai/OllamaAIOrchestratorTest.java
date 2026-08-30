@@ -82,5 +82,7 @@ class OllamaAIOrchestratorTest {
             .isInstanceOf(UnsupportedOperationException.class);
         assertThatThrownBy(() -> orchestrator.translate("text", "pt", embedContext()))
             .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> orchestrator.detectLanguage("text", embedContext()))
+            .isInstanceOf(UnsupportedOperationException.class);
     }
 }

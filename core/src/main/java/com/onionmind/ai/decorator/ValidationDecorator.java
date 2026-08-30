@@ -29,6 +29,7 @@ public class ValidationDecorator {
             case SUMMARIZE -> extract(json, "summary", null);
             case CLASSIFY -> extract(json, "category", null);
             case TRANSLATE -> extract(json, "translation", "detectedLanguage");
+            case DETECT_LANGUAGE -> extract(json, "language", null);
             case EXTRACT_ENTITIES, EMBED -> ValidatedResult.invalid();
         };
     }

@@ -16,5 +16,7 @@ public interface AIOrchestrator {
 
     Translation translate(String text, String targetLang, TaskContext ctx);
 
+    LanguageDetection detectLanguage(String text, TaskContext ctx);
+
     Embedding embed(String text, TaskContext ctx);
 }

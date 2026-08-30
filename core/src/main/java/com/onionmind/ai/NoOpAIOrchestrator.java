@@ -29,6 +29,11 @@ public class NoOpAIOrchestrator implements AIOrchestrator {
     }
 
     @Override
+    public LanguageDetection detectLanguage(String text, TaskContext ctx) {
+        throw new UnsupportedOperationException(MESSAGE);
+    }
+
+    @Override
     public Embedding embed(String text, TaskContext ctx) {
         throw new UnsupportedOperationException(MESSAGE);
     }

@@ -35,4 +35,10 @@ class NoOpAIOrchestratorTest {
         assertThatThrownBy(() -> orchestrator.translate("text", "pt", context()))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
+
+    @Test
+    void detectLanguageThrowsUnsupportedOperationException() {
+        assertThatThrownBy(() -> orchestrator.detectLanguage("text", context()))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 }

@@ -39,7 +39,8 @@ final class HybridRanker {
             SearchResult base = entry.getValue();
             double combined = textScore.getOrDefault(url, 0.0) + semanticScore.getOrDefault(url, 0.0);
             fused.add(new SearchResult(base.id(), base.url(), base.sourceType(), base.snippet(),
-                combined, base.version(), base.firstSeenAt(), base.lastSeenAt()));
+                combined, base.version(), base.firstSeenAt(), base.lastSeenAt(),
+                base.summary(), base.category()));
         }
 
         fused.sort(Comparator.comparingDouble(SearchResult::rank).reversed());

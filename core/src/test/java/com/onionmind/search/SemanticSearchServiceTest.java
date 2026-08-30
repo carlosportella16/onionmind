@@ -7,51 +7,42 @@ import com.onionmind.ai.LanguageDetection;
 import com.onionmind.ai.Summary;
 import com.onionmind.ai.TaskContext;
 import com.onionmind.ai.Translation;
-import org.junit.jupiter.api.AfterEach;
+import com.onionmind.TestcontainersConfiguration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabase;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
-import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@Import(TestcontainersConfiguration.class)
+@SpringBootTest
 class SemanticSearchServiceTest {
 
-    private EmbeddedDatabase db;
+    @Autowired
     private JdbcTemplate jdbc;
 
     @BeforeEach
     void setUp() {
-        db = new EmbeddedDatabaseBuilder().setType(EmbeddedDatabaseType.H2).build();
-        jdbc = new JdbcTemplate(db);
-        jdbc.execute("""
-            CREATE TABLE pages (
-                id BIGINT AUTO_INCREMENT PRIMARY KEY,
-                url VARCHAR(500) NOT NULL,
-                source_type VARCHAR(50) NOT NULL,
-                extracted_text CLOB,
-                version INT NOT NULL,
-                first_seen_at TIMESTAMP NOT NULL,
-                last_seen_at TIMESTAMP NOT NULL
-            )
-            """);
-    }
-
-    @AfterEach
-    void tearDown() {
-        db.shutdown();
+        jdbc.update("DELETE FROM page_versions");
+        jdbc.update("DELETE FROM pages");
     }
 
     private void insertPage(String url, String text) {
         jdbc.update("""
-            INSERT INTO pages (url, source_type, extracted_text, version, first_seen_at, last_seen_at)
-            VALUES (?, 'tor', ?, 1, now(), now())
-            """, url, text);
+            INSERT INTO pages (url, source_type, raw_html, extracted_text, content_hash, version)
+            VALUES (?, 'tor', ?, ?, ?, 1)
+            """, url, "<html>" + text + "</html>", text, Integer.toHexString(text.hashCode()));
+    }
+
+    private void enrich(String url, String summaryJson, String categoryJson) {
+        jdbc.update("UPDATE pages SET summary = ?::jsonb, category = ?::jsonb WHERE url = ?",
+            summaryJson, categoryJson, url);
     }
 
     @Test
@@ -74,6 +65,22 @@ class SemanticSearchServiceTest {
         assertThat(results.get(0).url()).isEqualTo("http://concept.onion");
         assertThat(results.get(0).rank()).isEqualTo(0.87);
         assertThat(results.get(0).snippet()).contains("moeda digital anonima");
+        assertThat(results.get(0).summary()).isNull();  // not enriched yet
+    }
+
+    @Test
+    void includesSummaryAndCategoryWhenThePageIsEnriched() {
+        insertPage("http://enriched.onion", "conteudo do mercado");
+        enrich("http://enriched.onion",
+            "{\"text\":\"um resumo curto\",\"confidence\":0.9}",
+            "{\"category\":\"marketplace\",\"confidence\":0.8}");
+        var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://enriched.onion", 0, 0.8)));
+        var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
+
+        var results = service.search("mercado", 5);
+
+        assertThat(results.get(0).summary()).isEqualTo("um resumo curto");
+        assertThat(results.get(0).category()).isEqualTo("marketplace");
     }
 
     @Test

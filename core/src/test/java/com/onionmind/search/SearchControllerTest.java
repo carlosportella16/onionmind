@@ -60,6 +60,38 @@ class SearchControllerTest {
     }
 
     @Test
+    void resultsCarrySummaryAndCategoryWhenThePageIsEnriched() {
+        insertPage("http://enriched.onion/", "bitcoin marketplace listings and vendor reviews");
+        jdbc.update("""
+            UPDATE pages SET summary = ?::jsonb, category = ?::jsonb WHERE url = ?
+            """,
+            "{\"text\":\"mercado de bitcoin\",\"confidence\":0.9}",
+            "{\"category\":\"marketplace\",\"confidence\":0.8}",
+            "http://enriched.onion/");
+
+        var response = rest.getForEntity(baseUrl() + "/search?q=bitcoin", SearchResponse.class);
+
+        assertThat(response.getBody().results()).singleElement()
+            .satisfies(r -> {
+                assertThat(r.summary()).isEqualTo("mercado de bitcoin");
+                assertThat(r.category()).isEqualTo("marketplace");
+            });
+    }
+
+    @Test
+    void resultsOmitSummaryAndCategoryForAnUnenrichedPage() {
+        insertPage("http://plain.onion/", "bitcoin discussion thread");
+
+        var response = rest.getForEntity(baseUrl() + "/search?q=bitcoin", SearchResponse.class);
+
+        assertThat(response.getBody().results()).singleElement()
+            .satisfies(r -> {
+                assertThat(r.summary()).isNull();
+                assertThat(r.category()).isNull();
+            });
+    }
+
+    @Test
     void blankQueryReturnsBadRequest() {
         var response = rest.getForEntity(baseUrl() + "/search?q=", SearchResponse.class);
 

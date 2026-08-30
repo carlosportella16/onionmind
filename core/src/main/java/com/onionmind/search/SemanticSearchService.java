@@ -74,7 +74,8 @@ public class SemanticSearchService {
         String placeholders = String.join(",", urls.stream().map(u -> "?").toList());
 
         List<SearchResult> rows = jdbc.query("""
-            SELECT id, url, source_type, extracted_text, version, first_seen_at, last_seen_at
+            SELECT id, url, source_type, extracted_text, version, first_seen_at, last_seen_at,
+                   summary->>'text' AS summary, category->>'category' AS category
             FROM pages
             WHERE url IN (%s)
             """.formatted(placeholders),
@@ -86,7 +87,8 @@ public class SemanticSearchService {
                     scoreByUrl.get(url),
                     rs.getInt("version"),
                     rs.getTimestamp("first_seen_at").toInstant(),
-                    rs.getTimestamp("last_seen_at").toInstant()
+                    rs.getTimestamp("last_seen_at").toInstant(),
+                    rs.getString("summary"), rs.getString("category")
                 );
             }, urls.toArray());
 

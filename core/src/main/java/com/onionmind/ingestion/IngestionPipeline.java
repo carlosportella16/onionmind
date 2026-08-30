@@ -1,5 +1,7 @@
 package com.onionmind.ingestion;
 
+import com.onionmind.content.AiEnrichingProcessor;
+import com.onionmind.content.AiOutcome;
 import com.onionmind.content.ContentProcessor;
 import com.onionmind.content.EmbeddingOutcome;
 import com.onionmind.content.EmbeddingProcessor;
@@ -30,6 +32,9 @@ public class IngestionPipeline {
     public void process(RawPageEvent event) {
         var doc = event.toDocument();
         EmbeddingOutcome embeddingOutcome = null;
+        boolean sawAi = false;
+        boolean aiFailed = false;
+        boolean aiUnchanged = false;
 
         for (var processor : processors) {
             if (!processor.supports(doc.type())) continue;
@@ -44,6 +49,14 @@ public class IngestionPipeline {
             if (processor instanceof EmbeddingProcessor) {
                 embeddingOutcome = EmbeddingOutcome.from(result);
             }
+            if (processor instanceof AiEnrichingProcessor) {
+                sawAi = true;
+                if (result.status() == ProcessingResult.Status.FAILED) {
+                    aiFailed = true;
+                } else if (result.status() == ProcessingResult.Status.SKIPPED && result.error() == null) {
+                    aiUnchanged = true; // content_hash gate said the page is unchanged
+                }
+            }
             if (result.status() == ProcessingResult.Status.FAILED) {
                 log.warn("Processor {} failed for {}: {}",
                     processor.getClass().getSimpleName(), doc.url(), result.error());
@@ -52,10 +65,18 @@ public class IngestionPipeline {
             doc = result.document();
         }
 
-        if (doc.extractedText() != null && !doc.extractedText().isBlank()) {
-            repository.upsertWithVersioning(doc, embeddingOutcome);
-        } else {
+        if (doc.extractedText() == null || doc.extractedText().isBlank()) {
             log.info("Skipping {} — no extractable text", doc.url());
+            return;
+        }
+
+        repository.upsertWithVersioning(doc, embeddingOutcome);
+
+        if (sawAi && !aiUnchanged) {
+            AiOutcome outcome = aiFailed
+                ? AiOutcome.partialFailure(doc.enrichment())
+                : AiOutcome.processed(doc.enrichment());
+            repository.updateAiFields(doc.url(), outcome);
         }
     }
 }

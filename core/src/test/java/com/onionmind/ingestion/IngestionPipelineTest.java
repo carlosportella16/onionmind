@@ -1,5 +1,7 @@
 package com.onionmind.ingestion;
 
+import com.onionmind.content.AiEnrichingProcessor;
+import com.onionmind.content.AiOutcome;
 import com.onionmind.content.ContentProcessor;
 import com.onionmind.content.Document;
 import com.onionmind.content.EmbeddingOutcome;
@@ -34,6 +36,14 @@ class IngestionPipelineTest {
 
     private ContentProcessor processorReturning(int order, ProcessingResult result) {
         ContentProcessor p = mock(ContentProcessor.class);
+        lenient().when(p.order()).thenReturn(order);
+        lenient().when(p.supports(any())).thenReturn(true);
+        lenient().when(p.process(any())).thenReturn(result);
+        return p;
+    }
+
+    private AiEnrichingProcessor aiProcessorReturning(int order, ProcessingResult result) {
+        AiEnrichingProcessor p = mock(AiEnrichingProcessor.class);
         lenient().when(p.order()).thenReturn(order);
         lenient().when(p.supports(any())).thenReturn(true);
         lenient().when(p.process(any())).thenReturn(result);
@@ -97,6 +107,44 @@ class IngestionPipelineTest {
             argThat(d -> d.extractedText().equals("page text to be blocked")), eq("url-denylist"));
         verify(repository, never()).upsertWithVersioning(any(), any());
         verify(embedding, never()).process(any());
+    }
+
+    @Test
+    void aiEnrichmentIsAggregatedAndPersistedAfterUpsert() {
+        Document afterSanitize = event().toDocument().withExtractedText("some page text here");
+        ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
+        AiEnrichingProcessor ai = aiProcessorReturning(30, ProcessingResult.success(afterSanitize));
+
+        var pipeline = new IngestionPipeline(List.of(sanitizer, ai), repository);
+        pipeline.process(event());
+
+        InOrder inOrder = inOrder(repository);
+        inOrder.verify(repository).upsertWithVersioning(any(), any());
+        inOrder.verify(repository).updateAiFields(eq("http://example.onion"),
+            argThat(o -> o.status().equals(AiOutcome.PROCESSED)));
+    }
+
+    @Test
+    void aiProcessorFailureIsPersistedAsPartialFailure() {
+        Document afterSanitize = event().toDocument().withExtractedText("some page text here");
+        ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
+        AiEnrichingProcessor ai = aiProcessorReturning(30, ProcessingResult.failed(afterSanitize, "providers down"));
+
+        new IngestionPipeline(List.of(sanitizer, ai), repository).process(event());
+
+        verify(repository).updateAiFields(any(), argThat(o -> o.status().equals(AiOutcome.FAILED_TRANSIENT)));
+    }
+
+    @Test
+    void unchangedAiContentDoesNotTouchAiFields() {
+        Document afterSanitize = event().toDocument().withExtractedText("some page text here");
+        ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
+        AiEnrichingProcessor ai = aiProcessorReturning(30, ProcessingResult.unchanged(afterSanitize));
+
+        new IngestionPipeline(List.of(sanitizer, ai), repository).process(event());
+
+        verify(repository).upsertWithVersioning(any(), any());
+        verify(repository, never()).updateAiFields(any(), any());
     }
 
     @Test

@@ -1,18 +1,25 @@
 package com.onionmind.ingestion.internal;
 
 import com.google.common.hash.Hashing;
+import com.onionmind.content.AiOutcome;
 import com.onionmind.content.Document;
 import com.onionmind.content.EmbeddingOutcome;
+import com.onionmind.content.Enrichment;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Optional;
 
 @Repository
 public class PageRepository {
     private final JdbcTemplate jdbc;
+    private final ObjectMapper mapper = JsonMapper.builder().build();
 
     public PageRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
@@ -71,6 +78,49 @@ public class PageRepository {
                 VALUES (?, ?, ?, 'quarantined')
                 """, doc.url(), doc.sourceType(), hash);
         }
+    }
+
+    /** Writes the Fase 3 enrichment (summary/category/language/translation JSONB + ai_status). */
+    public void updateAiFields(String url, AiOutcome outcome) {
+        Enrichment e = outcome.enrichment();
+        jdbc.update("""
+            UPDATE pages
+            SET summary = ?::jsonb, category = ?::jsonb, language = ?::jsonb, translated_text = ?::jsonb,
+                ai_status = ?, ai_processed_at = now(), ai_error_message = ?
+            WHERE url = ?
+            """,
+            summaryJson(e), categoryJson(e), languageJson(e), translationJson(e),
+            outcome.status(), outcome.errorMessage(), url);
+    }
+
+    private String summaryJson(Enrichment e) {
+        return e.summary() == null ? null
+            : json(Map.of("text", e.summary().text(), "confidence", e.summary().confidence()));
+    }
+
+    private String categoryJson(Enrichment e) {
+        return e.category() == null ? null
+            : json(Map.of("category", e.category().category(), "confidence", e.category().confidence()));
+    }
+
+    private String languageJson(Enrichment e) {
+        return e.language() == null ? null
+            : json(Map.of("code", e.language().code(), "confidence", e.language().confidence()));
+    }
+
+    private String translationJson(Enrichment e) {
+        if (e.translation() == null) {
+            return null;
+        }
+        Map<String, Object> map = new HashMap<>();
+        map.put("text", e.translation().text());
+        map.put("detectedLanguage", e.translation().detectedLanguage());
+        map.put("confidence", e.translation().confidence());
+        return json(map);
+    }
+
+    private String json(Map<String, ?> map) {
+        return mapper.writeValueAsString(map);
     }
 
     private void updateEmbeddingStatus(String url, EmbeddingOutcome outcome) {

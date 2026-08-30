@@ -69,6 +69,9 @@ ai:
   retry:
     max-retries: 2             # same-provider retries on a transient transport failure
     backoff: 200ms
+  backfill:
+    batch-size: 20             # pages per scheduled run of AiEnrichmentBackfillJob
+    interval-ms: 300000
   ollama:
     generate-model: llama3.1:8b
     timeout: 120s              # local generation on a small VM is slow

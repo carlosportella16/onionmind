@@ -1,8 +1,8 @@
 package com.onionmind.content.processors;
 
 import com.onionmind.ai.AIOrchestrator;
+import com.onionmind.content.AiEnrichingProcessor;
 import com.onionmind.content.AiEnrichmentGate;
-import com.onionmind.content.ContentProcessor;
 import com.onionmind.content.Document;
 import com.onionmind.content.DocumentType;
 import com.onionmind.content.ProcessingResult;
@@ -15,7 +15,7 @@ import org.slf4j.LoggerFactory;
  * AI failure abort the pipeline — a failed step returns FAILED and the page is persisted
  * with whatever the earlier steps produced (fase3-sdd 7.6).
  */
-abstract class AbstractAiProcessor implements ContentProcessor {
+abstract class AbstractAiProcessor implements AiEnrichingProcessor {
 
     protected final Logger log = LoggerFactory.getLogger(getClass());
     protected final AIOrchestrator orchestrator;

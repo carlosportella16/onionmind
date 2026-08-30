@@ -1,9 +1,15 @@
 package com.onionmind.ingestion.internal;
 
 import com.onionmind.TestcontainersConfiguration;
+import com.onionmind.ai.Classification;
+import com.onionmind.ai.Summary;
+import com.onionmind.ai.Translation;
+import com.onionmind.content.AiOutcome;
 import com.onionmind.content.Document;
 import com.onionmind.content.DocumentType;
 import com.onionmind.content.EmbeddingOutcome;
+import com.onionmind.content.Enrichment;
+import com.onionmind.content.Enrichment.LanguageTag;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -121,6 +127,49 @@ class PageRepositoryTest {
             .containsEntry("ai_status", "quarantined")
             .containsEntry("extracted_text", null)
             .containsEntry("raw_html", null);
+    }
+
+    @Test
+    void updateAiFieldsWritesEnrichmentAsJsonbAndMarksProcessed() {
+        String url = "http://ai-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "the page content"));
+
+        Enrichment enrichment = Enrichment.EMPTY
+            .withLanguage(new LanguageTag("en", 0.97))
+            .withSummary(new Summary("um resumo curto", 0.9))
+            .withCategory(new Classification("forum", 0.82))
+            .withTranslation(new Translation("o conteúdo da página", "en", 0.88));
+
+        repository.updateAiFields(url, AiOutcome.processed(enrichment));
+
+        var row = jdbc.queryForMap("""
+            SELECT ai_status, ai_error_message,
+                   summary->>'text' AS s, category->>'category' AS c,
+                   language->>'code' AS l, translated_text->>'text' AS t
+            FROM pages WHERE url = ?
+            """, url);
+        assertThat(row)
+            .containsEntry("ai_status", "processed")
+            .containsEntry("ai_error_message", null)
+            .containsEntry("s", "um resumo curto")
+            .containsEntry("c", "forum")
+            .containsEntry("l", "en")
+            .containsEntry("t", "o conteúdo da página");
+    }
+
+    @Test
+    void updateAiFieldsPartialFailureKeepsWhatWasGeneratedAndFlagsRetry() {
+        String url = "http://ai-partial-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "the page content"));
+
+        Enrichment partial = Enrichment.EMPTY.withSummary(new Summary("só o resumo saiu", 0.9));
+        repository.updateAiFields(url, AiOutcome.partialFailure(partial));
+
+        var row = jdbc.queryForMap(
+            "SELECT ai_status, ai_error_message, summary->>'text' AS s, category FROM pages WHERE url = ?", url);
+        assertThat(row).containsEntry("ai_status", "failed_transient").containsEntry("s", "só o resumo saiu");
+        assertThat(row.get("ai_error_message")).asString().contains("backfill");
+        assertThat(row.get("category")).isNull();
     }
 
     @Test

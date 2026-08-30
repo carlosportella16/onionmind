@@ -75,8 +75,12 @@ class OllamaAIOrchestratorTest {
     }
 
     @Test
-    void summarizeIsNotSupportedYet() {
+    void generationIsNotSupportedInThisWiring() {
         assertThatThrownBy(() -> orchestrator.summarize("text", embedContext()))
+            .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> orchestrator.classify("text", embedContext()))
+            .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> orchestrator.translate("text", "pt", embedContext()))
             .isInstanceOf(UnsupportedOperationException.class);
     }
 }

@@ -66,6 +66,9 @@ ai:
   max-escalations: 2           # provider switches before giving up (returns best result, no throw)
   cache-ttl: 24h               # CacheDecorator, keyed by (text hash, task type) — not provider
   safety-margin-percent: 5     # keep this far below each cloud provider's published daily limit
+  retry:
+    max-retries: 2             # same-provider retries on a transient transport failure
+    backoff: 200ms
   ollama:
     generate-model: llama3.1:8b
     timeout: 120s              # local generation on a small VM is slow

@@ -1,0 +1,7 @@
+# IllegalContentGuard — URL/host denylist (fase3-sdd sec. 7.5).
+# One entry per line. A line is either a bare host (matched case-insensitively against
+# the page URL's host) or a full URL prefix. Lines starting with '#' and blank lines
+# are ignored.
+#
+# This file ships empty on purpose — the real curated list is maintained outside the
+# repository and mounted/overridden at deploy time via ONION_DENYLIST_PATH.

@@ -1,9 +1,11 @@
 package com.onionmind.content;
 
 import com.onionmind.ai.AIOrchestrator;
+import com.onionmind.ai.Classification;
 import com.onionmind.ai.Embedding;
 import com.onionmind.ai.Summary;
 import com.onionmind.ai.TaskContext;
+import com.onionmind.ai.Translation;
 import com.onionmind.search.EmbeddingPoint;
 import com.onionmind.search.SemanticSearchHit;
 import com.onionmind.search.VectorStore;
@@ -133,6 +135,16 @@ class EmbeddingProcessorTest {
 
         @Override
         public Summary summarize(String text, TaskContext ctx) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Classification classify(String text, TaskContext ctx) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Translation translate(String text, String targetLang, TaskContext ctx) {
             throw new UnsupportedOperationException();
         }
 

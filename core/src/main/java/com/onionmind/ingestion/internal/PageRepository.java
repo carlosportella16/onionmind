@@ -46,6 +46,33 @@ public class PageRepository {
         }
     }
 
+    /**
+     * A page the illegal-content guard blocked: record it for audit and make sure no
+     * content is stored — strip an existing row, or insert a minimal one if none exists.
+     */
+    public void quarantine(Document doc, String reason) {
+        String hash = sha256(doc.extractedText() == null ? "" : doc.extractedText());
+
+        jdbc.update("""
+            INSERT INTO quarantined_pages (url, content_hash, reason)
+            VALUES (?, ?, ?)
+            """, doc.url(), hash, reason);
+
+        int updated = jdbc.update("""
+            UPDATE pages
+            SET raw_html = NULL, extracted_text = NULL,
+                ai_status = 'quarantined', ai_processed_at = now()
+            WHERE url = ?
+            """, doc.url());
+
+        if (updated == 0) {
+            jdbc.update("""
+                INSERT INTO pages (url, source_type, content_hash, ai_status)
+                VALUES (?, ?, ?, 'quarantined')
+                """, doc.url(), doc.sourceType(), hash);
+        }
+    }
+
     private void updateEmbeddingStatus(String url, EmbeddingOutcome outcome) {
         jdbc.update("""
             UPDATE pages

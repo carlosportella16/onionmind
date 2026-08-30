@@ -17,6 +17,8 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
@@ -79,6 +81,22 @@ class IngestionPipelineTest {
         pipeline.process(event());
 
         verifyNoInteractions(repository);
+    }
+
+    @Test
+    void haltStopsThePipelineAndQuarantinesWithoutPersistingContent() {
+        Document afterSanitize = event().toDocument().withExtractedText("page text to be blocked");
+        ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
+        ContentProcessor guard = processorReturning(5, ProcessingResult.halt(afterSanitize, "url-denylist"));
+        ContentProcessor embedding = processorReturning(100, ProcessingResult.success(afterSanitize));
+
+        var pipeline = new IngestionPipeline(List.of(sanitizer, guard, embedding), repository);
+        pipeline.process(event());
+
+        verify(repository).quarantine(
+            argThat(d -> d.extractedText().equals("page text to be blocked")), eq("url-denylist"));
+        verify(repository, never()).upsertWithVersioning(any(), any());
+        verify(embedding, never()).process(any());
     }
 
     @Test

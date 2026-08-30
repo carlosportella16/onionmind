@@ -16,6 +16,7 @@ public record EmbeddingOutcome(String status, String errorMessage) {
             case SUCCESS -> new EmbeddingOutcome(EMBEDDED, null);
             case SKIPPED -> result.error() == null ? new EmbeddingOutcome(UNCHANGED, null) : null;
             case FAILED -> new EmbeddingOutcome(FAILED_TRANSIENT, result.error());
+            case HALT -> null; // guard stops the pipeline before EmbeddingProcessor ever runs
         };
     }
 }

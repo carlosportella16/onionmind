@@ -107,4 +107,34 @@ class PageRepositoryTest {
             "SELECT embedding_error_message FROM pages WHERE url = ?", String.class, url);
         assertThat(errorMessage).isEqualTo("ollama unreachable");
     }
+
+    @Test
+    void quarantineInsertsAuditRowAndMinimalPageWhenNoneExists() {
+        String url = "http://quarantine-new-" + System.nanoTime() + ".onion";
+
+        repository.quarantine(doc(url, "blocked content"), "url-denylist");
+
+        assertThat(jdbc.queryForObject(
+            "SELECT reason FROM quarantined_pages WHERE url = ?", String.class, url))
+            .isEqualTo("url-denylist");
+        assertThat(jdbc.queryForMap("SELECT ai_status, extracted_text, raw_html FROM pages WHERE url = ?", url))
+            .containsEntry("ai_status", "quarantined")
+            .containsEntry("extracted_text", null)
+            .containsEntry("raw_html", null);
+    }
+
+    @Test
+    void quarantineStripsContentFromAnExistingPage() {
+        String url = "http://quarantine-existing-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "content that was fine before"));
+
+        repository.quarantine(doc(url, "content that was fine before"), "text-pattern:3");
+
+        assertThat(jdbc.queryForMap("SELECT ai_status, extracted_text, raw_html FROM pages WHERE url = ?", url))
+            .containsEntry("ai_status", "quarantined")
+            .containsEntry("extracted_text", null)
+            .containsEntry("raw_html", null);
+        assertThat(jdbc.queryForObject(
+            "SELECT count(*) FROM quarantined_pages WHERE url = ?", Integer.class, url)).isEqualTo(1);
+    }
 }

@@ -35,6 +35,12 @@ public class IngestionPipeline {
             if (!processor.supports(doc.type())) continue;
 
             var result = processor.process(doc);
+            if (result.status() == ProcessingResult.Status.HALT) {
+                log.warn("Ingestion halted for {} by {}: {}",
+                    doc.url(), processor.getClass().getSimpleName(), result.error());
+                repository.quarantine(doc, result.error());
+                return; // no further processing, no content persisted
+            }
             if (processor instanceof EmbeddingProcessor) {
                 embeddingOutcome = EmbeddingOutcome.from(result);
             }

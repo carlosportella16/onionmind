@@ -1,6 +1,7 @@
 package com.onionmind.ai.routing;
 
 import com.onionmind.ai.provider.ProviderQuota;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -28,6 +29,7 @@ public class ProviderQuotaTracker {
     private final Clock clock;
     private final Map<String, ProviderLimits> limits;
 
+    @Autowired
     public ProviderQuotaTracker(StringRedisTemplate redis,
                                 @Value("${ai.groq.daily-limit}") long groqDaily,
                                 @Value("${ai.groq.minute-limit}") long groqMinute,

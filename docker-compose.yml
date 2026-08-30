@@ -73,6 +73,17 @@ services:
     command: ["OLLAMA_HOST=ollama:11434 ollama pull nomic-embed-text"]
     restart: "no"
 
+  # Phase 3: generative model for summarize/classify/translate. nomic-embed-text
+  # (pulled above) only does embeddings.
+  ollama-pull-generate:
+    image: ollama/ollama:latest
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["OLLAMA_HOST=ollama:11434 ollama pull llama3.1:8b"]
+    restart: "no"
+
   qdrant:
     image: qdrant/qdrant:v1.11.0
     ports:

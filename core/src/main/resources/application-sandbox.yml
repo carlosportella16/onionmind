@@ -1,4 +1,6 @@
-# Sandbox profile — identical to default for Fase 1
+# Sandbox profile — local dev. Inherits the ollama/qdrant/embedding/ai blocks from
+# application.yml; only the enable flags differ here (fase3-sdd D1). To exercise the
+# real pipeline locally, flip these to true and have the services + API keys in place.
 spring:
   application:
     name: onionmind-core
@@ -21,3 +23,9 @@ spring:
 
 server:
   port: 8081
+
+embedding:
+  enabled: false
+
+ai:
+  enabled: false

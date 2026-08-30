@@ -35,8 +35,36 @@ qdrant:
   vector-size: 768
 
 embedding:
-  enabled: false
+  enabled: ${EMBEDDING_ENABLED:false}
   chunk-size: 512
   chunk-overlap-percent: 15
   batch-size: 100
   min-score: 0.35
+
+# Phase 3: same shape as application.yml, only enabled + keys differ per environment (fase3-sdd D1).
+ai:
+  enabled: ${AI_ENABLED:true}
+  min-confidence: 0.7
+  max-escalations: 2
+  cache-ttl: 24h
+  safety-margin-percent: 5
+  ollama:
+    generate-model: ${OLLAMA_GENERATE_MODEL:llama3.1:8b}
+    timeout: 120s
+  groq:
+    base-url: https://api.groq.com/openai/v1
+    model: ${GROQ_MODEL:llama-3.3-70b-versatile}
+    api-key: ${GROQ_API_KEY:}
+    daily-limit: 14400
+    minute-limit: 30
+  gemini:
+    base-url: https://generativelanguage.googleapis.com/v1beta
+    model: ${GEMINI_MODEL:gemini-2.5-flash}
+    api-key: ${GEMINI_API_KEY:}
+    daily-limit: 1500
+    minute-limit: 15
+
+illegal-content:
+  url-denylist-path: ${ONION_DENYLIST_PATH:classpath:security/onion-denylist.txt}
+  text-pattern-path: ${ILLEGAL_TEXT_PATTERN_PATH:classpath:security/illegal-text-patterns.txt}
+  quarantine-retention-days: 30

@@ -22,6 +22,12 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       properties:
         spring.json.trusted.packages: "com.onionmind.ingestion"
+  data:
+    redis:
+      # Phase 3: quota counters + AI response cache. Same instance the crawler uses
+      # for dedup — keyspaces are prefix-isolated (quota:* / ai-cache:* vs dedup:*).
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
 
 server:
   port: 8081
@@ -51,3 +57,35 @@ embedding:
   # pairs), so this must stay low enough to not false-negative real matches — tune per
   # embedding model/corpus, this is a floor not a curated relevance score.
   min-score: 0.35
+
+# Phase 3: generative AI (summarize / classify / translate). Separate from embedding.enabled
+# so embeddings and generation can roll out independently (fase3-sdd sec. 8, D1).
+ai:
+  enabled: false
+  min-confidence: 0.7          # below this the ValidationDecorator escalates to the next provider
+  max-escalations: 2           # provider switches before giving up (returns best result, no throw)
+  cache-ttl: 24h               # CacheDecorator, keyed by (text hash, task type) — not provider
+  safety-margin-percent: 5     # keep this far below each cloud provider's published daily limit
+  ollama:
+    generate-model: llama3.1:8b
+    timeout: 120s              # local generation on a small VM is slow
+  groq:
+    base-url: https://api.groq.com/openai/v1
+    model: llama-3.3-70b-versatile
+    api-key: ${GROQ_API_KEY:}
+    daily-limit: 14400
+    minute-limit: 30
+  gemini:
+    base-url: https://generativelanguage.googleapis.com/v1beta
+    model: gemini-2.5-flash
+    api-key: ${GEMINI_API_KEY:}
+    daily-limit: 1500
+    minute-limit: 15
+  # Limits are August 2026 free-tier numbers (sdd sec. 9) — reconfirm before production.
+
+illegal-content:
+  # Curated lists live outside the repo (audited separately, fase3-sdd sec. 7.5, D3).
+  # The classpath files are placeholders so the guard boots; populate on deploy.
+  url-denylist-path: classpath:security/onion-denylist.txt
+  text-pattern-path: classpath:security/illegal-text-patterns.txt
+  quarantine-retention-days: 30

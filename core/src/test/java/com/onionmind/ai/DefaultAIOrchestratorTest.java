@@ -55,7 +55,7 @@ class DefaultAIOrchestratorTest {
             new RetryDecorator(1, Duration.ofMillis(1)),
             new ValidationDecorator(),
             cache,
-            new MetricsDecorator(new SimpleMeterRegistry()),
+            new MetricsDecorator(new SimpleMeterRegistry(), tracker),
             new OllamaEmbedder(embedServer.baseUrl(), "nomic-embed-text"),
             0.7, 2);
     }

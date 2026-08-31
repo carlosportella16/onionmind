@@ -4,6 +4,8 @@ import com.onionmind.content.ContentProcessor;
 import com.onionmind.content.Document;
 import com.onionmind.content.DocumentType;
 import com.onionmind.content.ProcessingResult;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -36,13 +38,16 @@ public class IllegalContentGuard implements ContentProcessor {
 
     private final Set<String> deniedHosts;
     private final List<Pattern> textPatterns;
+    private final MeterRegistry registry;
 
     @Autowired
     public IllegalContentGuard(
             @Value("${illegal-content.url-denylist-path:classpath:security/onion-denylist.txt}") Resource denylist,
-            @Value("${illegal-content.text-pattern-path:classpath:security/illegal-text-patterns.txt}") Resource patterns) {
+            @Value("${illegal-content.text-pattern-path:classpath:security/illegal-text-patterns.txt}") Resource patterns,
+            MeterRegistry registry) {
         this.deniedHosts = loadHosts(denylist);
         this.textPatterns = loadPatterns(patterns);
+        this.registry = registry;
         log.info("IllegalContentGuard loaded: {} denied host(s), {} text pattern(s)",
             deniedHosts.size(), textPatterns.size());
     }
@@ -50,24 +55,31 @@ public class IllegalContentGuard implements ContentProcessor {
     IllegalContentGuard(Set<String> deniedHosts, List<Pattern> textPatterns) {
         this.deniedHosts = deniedHosts;
         this.textPatterns = textPatterns;
+        this.registry = new SimpleMeterRegistry();
     }
 
     @Override
     public ProcessingResult process(Document document) {
         String host = hostOf(document.url());
         if (host != null && deniedHosts.contains(host)) {
-            return ProcessingResult.halt(document, "url-denylist");
+            return quarantine(document, "url-denylist");
         }
 
         String text = document.extractedText();
         if (text != null && !text.isBlank()) {
             for (int i = 0; i < textPatterns.size(); i++) {
                 if (textPatterns.get(i).matcher(text).find()) {
-                    return ProcessingResult.halt(document, "text-pattern:" + (i + 1));
+                    return quarantine(document, "text-pattern:" + (i + 1));
                 }
             }
         }
         return ProcessingResult.success(document);
+    }
+
+    private ProcessingResult quarantine(Document document, String reason) {
+        String tag = reason.startsWith("text-pattern") ? "text-pattern" : reason;
+        registry.counter("content.quarantined.total", "reason", tag).increment();
+        return ProcessingResult.halt(document, reason);
     }
 
     @Override

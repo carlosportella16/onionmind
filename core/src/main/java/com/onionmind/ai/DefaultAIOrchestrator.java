@@ -121,7 +121,7 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
             AIProvider provider = router.select(current.withAttempt(attempt));
             ValidatedResult validated;
             try {
-                CompletionResponse raw = metrics.timed(ctx.type(),
+                CompletionResponse raw = metrics.timed(ctx.type(), provider.id(),
                     () -> retry.execute(() -> provider.complete(request)));
                 quotaTracker.recordUsage(provider.id());
                 validated = validator.validate(raw, ctx.type());

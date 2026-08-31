@@ -13,14 +13,14 @@ import java.util.Set;
 
 /**
  * order 40 — classifies the page into a small fixed taxonomy and writes {@code pages.category}.
- * A category outside the taxonomy is rejected as a failure, which re-queues the page for the
- * backfill job (spec content/ai-enrichment).
+ * The model's answer is a hint: anything outside the taxonomy collapses to {@code "other"}
+ * (the designed catch-all), so classification never fails a page. Refine the taxonomy with
+ * real data (fase3-sdd 7.6).
  */
 @Component
 @ConditionalOnProperty(prefix = "ai", name = "enabled", havingValue = "true")
 public class ClassifierProcessor extends AbstractAiProcessor {
 
-    /** fase3-sdd 7.6 — start here, refine with real data. */
     static final Set<String> TAXONOMY =
         Set.of("marketplace", "forum", "blog", "service", "institutional", "other");
 
@@ -28,17 +28,23 @@ public class ClassifierProcessor extends AbstractAiProcessor {
         super(orchestrator, gate);
     }
 
+    private static final String ALLOWED =
+        "Categorias permitidas (responda com exatamente uma, em minúsculas): "
+            + String.join(", ", new java.util.TreeSet<>(TAXONOMY)) + ".\n\n";
+
     @Override
     protected Document enrich(Document document, String text) {
-        Classification result = orchestrator.classify(text,
+        Classification result = orchestrator.classify(ALLOWED + text,
             TaskContext.batch(TaskContext.TaskType.CLASSIFY, approxTokens(text), "pt", false));
 
-        String category = result.category() == null ? "" : result.category().trim().toLowerCase(Locale.ROOT);
-        if (!TAXONOMY.contains(category)) {
-            throw new IllegalStateException("category '" + result.category() + "' outside taxonomy");
+        String raw = result.category() == null ? "" : result.category().trim().toLowerCase(Locale.ROOT);
+        String category = TAXONOMY.contains(raw) ? raw : "other";
+        double confidence = category.equals(raw) ? result.confidence() : Math.min(result.confidence(), 0.5);
+        if (!category.equals(raw)) {
+            log.debug("classifier: '{}' not in taxonomy for {} -> other", result.category(), document.url());
         }
         return document.withEnrichment(document.enrichment()
-            .withCategory(new Classification(category, result.confidence())));
+            .withCategory(new Classification(category, confidence)));
     }
 
     @Override

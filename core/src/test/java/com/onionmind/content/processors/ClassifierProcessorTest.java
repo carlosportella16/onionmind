@@ -46,13 +46,14 @@ class ClassifierProcessorTest {
     }
 
     @Test
-    void rejectsACategoryOutsideTheTaxonomy() {
+    void collapsesACategoryOutsideTheTaxonomyToOther() {
         when(orchestrator.classify(any(), any())).thenReturn(new Classification("cryptocurrency-exchange", 0.9));
 
         ProcessingResult result = processor.process(doc());
 
-        assertThat(result.status()).isEqualTo(ProcessingResult.Status.FAILED);
-        assertThat(result.error()).contains("outside taxonomy");
+        assertThat(result.status()).isEqualTo(ProcessingResult.Status.SUCCESS);
+        assertThat(result.document().enrichment().category().category()).isEqualTo("other");
+        assertThat(result.document().enrichment().category().confidence()).isLessThanOrEqualTo(0.5);
     }
 
     @Test

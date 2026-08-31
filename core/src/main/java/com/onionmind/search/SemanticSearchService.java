@@ -2,6 +2,8 @@ package com.onionmind.search;
 
 import com.onionmind.ai.AIOrchestrator;
 import com.onionmind.ai.TaskContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -23,6 +25,7 @@ import java.util.Optional;
 @Component
 public class SemanticSearchService {
 
+    private static final Logger log = LoggerFactory.getLogger(SemanticSearchService.class);
     private static final int SNIPPET_LENGTH = 240;
 
     private final Optional<VectorStore> vectorStore;
@@ -53,6 +56,13 @@ public class SemanticSearchService {
         float[] queryVector = aiOrchestrator.get().embed(query, ctx).vector();
 
         List<SemanticSearchHit> hits = vectorStore.get().search(queryVector, topK);
+
+        // DEBUG on this logger dumps every raw cosine score — how min-score gets calibrated
+        // against a real corpus (task 1.2 of phase3-ai-generation).
+        if (log.isDebugEnabled()) {
+            hits.forEach(h -> log.debug("semantic-score q=\"{}\" score={} url={} chunk={}",
+                query, h.score(), h.url(), h.chunkIndex()));
+        }
 
         // Qdrant's k-NN always returns topK nearest points, even when nothing is actually
         // relevant (e.g. a small corpus) — drop anything below the relevance floor.

@@ -2,7 +2,7 @@
 
 > AI-powered Knowledge Discovery Platform for the Tor Network.
 
-**Current Phase:** Phase 1 complete (crawler discovers `.onion` pages via Tor, ingestion pipeline sanitizes and versions content, full-text search API + React SPA) — Phase 2 (semantic search) next
+**Current Phase:** Phase 3 code complete — real generation pipeline (summarize / classify / translate) with a multi-provider `AIOrchestrator` (Ollama, Groq, Gemini Flash), an AI Cost Optimizer, an illegal-content guard, and enrichment surfaced in search. End-to-end validation against the real cloud providers is still pending (see `docs/onionmind-fase3-sdd.md` §11.4 / §12). Phase 2 (semantic search) landed in PRs #5 and #6; its exit gate has not yet been re-run against live Ollama + Qdrant.
 
 **Tech Stack:** Go (crawler) • Java 25 (Spring Boot 4.1 + Spring Modulith) • PostgreSQL • Redpanda • React
 
@@ -63,8 +63,8 @@ Most Tor search engines are link lists without ranking or context. OnionMind cha
 |-------|-------|--------|---|
 | **0** | Repository, CI, Docker Compose, initial schema | ✅ Complete | Infrastructure boots, tests pass |
 | **1** | Crawler + full-text search (real MVP) | ✅ Complete | Discover → crawl → index → search in minutes |
-| **2** | Semantic search (embeddings + Qdrant) | ⏳ Planned | Concept-based search works |
-| **3** | AI generation (summarize, classify, translate) | ⏳ Planned | New page summarized in minutes, quota never exceeded |
+| **2** | Semantic search (embeddings + Qdrant) | 🟡 Code merged (PR #5, #6) — live gate not re-run | Concept-based search works |
+| **3** | AI generation (summarize, classify, translate) | 🟡 Code complete — live-provider validation pending | New page summarized in minutes, quota never exceeded |
 | **4** | Knowledge graph + versioning | ⏳ Planned | "What changed?" answers correctly |
 | **5** | Full RAG + Agent Playground | ⏳ Planned | RAG pipeline functional, real-world tested |
 | **6** | External connectors (RSS, GitHub, PDF) | ⏳ Backlog | — |
@@ -77,6 +77,19 @@ Ships a functional Tor search engine without AI:
 - **Indexing:** PostgreSQL `tsvector` GENERATED column + GIN index, `ts_rank` for relevance
 - **REST API:** GET `/api/search?q=term` returns ranked pages
 - **Frontend:** Minimal React SPA with search input
+
+### Phase 3 Details
+
+Adds LLM-generated understanding without coupling to one provider or a paid account:
+- **`AIOrchestrator`:** one interface (`summarize` / `classify` / `translate` / `detectLanguage` / `embed`); a decorator chain (metrics → cache → retry → validation) with a provider-escalation loop that switches provider on a low-confidence answer and returns the best result rather than throwing.
+- **Three adapters:** `OllamaProvider` (local, no rate limit), `GroqProvider` (fast, daily + per-minute cap), `GeminiProvider` (1M context, tighter cap). Missing API key → the provider reports zero quota and is skipped.
+- **AI Cost Optimizer:** short non-critical text starts local, long/critical starts on the cloud; Ollama is always the floor. `ProviderQuotaTracker` counts daily and per-minute usage in Redis.
+- **Enrichment processors** (`ContentProcessor`, order 10–40): language detection (local stopword heuristic, escalates to the LLM when ambiguous), Portuguese translation (kept as a separate field), 2–3 sentence summary, fixed-taxonomy classification. Each skips work when `content_hash` is unchanged.
+- **Illegal-content guard** (order 5, before any model): URL/host denylist + audited text patterns; a match halts the pipeline, records an audit row and persists no content. Perceptual image hashing is a documented gap (no images are stored).
+- **Search:** `/api/search` results carry `summary` and `category` read straight from JSONB — no LLM on the query path.
+- **Backfill:** a scheduled job re-runs the enrichment processors for pages stuck at `pending` / `failed_transient`.
+
+Enable it with `ai.enabled=true` and the two API keys (below). With it off, the app behaves exactly as Phase 2.
 
 ---
 
@@ -97,10 +110,12 @@ Ships a functional Tor search engine without AI:
 git clone https://github.com/carlosportella/onionmind.git
 cd onionmind
 
-# Start infrastructure — postgres, redpanda, redpanda-console, redis, tor
+# Start infrastructure — postgres, redpanda, redpanda-console, redis, tor,
+# ollama (pulls nomic-embed-text for embeddings + llama3.1:8b for generation),
+# qdrant (Phase 2+)
 docker-compose up -d
 
-# Wait for services to report healthy
+# Wait for services to report healthy — the two ollama-pull jobs run once and exit
 docker compose ps
 
 # Build and test Java core
@@ -125,6 +140,21 @@ cd core
 # API available: http://localhost:8081
 ```
 
+**Enabling AI (Phase 2 embeddings and/or Phase 3 generation):** both are off by
+default. Set the flags and, for generation, the free-tier API keys as
+environment variables (never commit them):
+
+```bash
+export GROQ_API_KEY=...      # https://console.groq.com
+export GEMINI_API_KEY=...    # https://aistudio.google.com
+./gradlew bootRun --args='--spring.profiles.active=sandbox \
+  --embedding.enabled=true --ai.enabled=true'
+```
+
+With no key set for a provider it simply reports zero quota and the router
+skips it, degrading to local Ollama. Limits in `application.yml` are the
+free-tier numbers as of Aug 2026 — reconfirm before production.
+
 **Note:** `docker-compose.yml`'s `redpanda` service only advertises its
 in-network hostname (`redpanda:9092`) by default for containers on the
 compose network. A Java process running on the host (like `bootRun` above)
@@ -145,6 +175,19 @@ npm run dev
 ```
 
 **Search directly against the API:** http://localhost:8081/api/search?q=bitcoin
+
+With `ai.enabled=true`, each result also carries the generated `summary` and
+`category`:
+
+```json
+{
+  "url": "http://example.onion/",
+  "snippet": "...highlighted match...",
+  "summary": "Fórum sobre troca anônima de criptomoedas e ferramentas de privacidade.",
+  "category": "forum",
+  "rank": 0.53, "version": 1
+}
+```
 
 ---
 

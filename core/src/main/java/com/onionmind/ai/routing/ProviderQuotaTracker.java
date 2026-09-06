@@ -54,8 +54,13 @@ public class ProviderQuotaTracker {
         }
         long dayRemaining = limit.daily() - read(dayKey(providerId));
         long minuteRemaining = limit.perMinute() - read(minuteKey(providerId));
-        long effective = Math.max(0, Math.min(dayRemaining, minuteRemaining));
-        return new ProviderQuota(effective, limit.daily());
+        // Pair remaining with whichever limit is actually binding — margin-percent must be
+        // read against that same limit, or a tight per-minute cap (e.g. 30) never clears a
+        // margin computed off the much larger daily cap (e.g. 5% of 14400 = 720) and the
+        // cloud provider is silently excluded from the ladder forever, even at full quota.
+        return minuteRemaining <= dayRemaining
+            ? new ProviderQuota(Math.max(0, minuteRemaining), limit.perMinute())
+            : new ProviderQuota(Math.max(0, dayRemaining), limit.daily());
     }
 
     /** Call after every provider request that actually went out. */

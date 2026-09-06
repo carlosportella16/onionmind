@@ -28,6 +28,14 @@ spring:
       # for dedup — keyspaces are prefix-isolated (quota:* / ai-cache:* vs dedup:*).
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+  modulith:
+    events:
+      jdbc:
+        # P2-5: creates the event_publication table so shutdown doesn't throw
+        # BadSqlGrammarException. No in-process events published yet (Phase 4 adds
+        # PageIndexedEvent, ADR-009) — this just makes the registry's own table exist.
+        schema-initialization:
+          enabled: true
 
 server:
   port: 8081

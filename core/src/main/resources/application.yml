@@ -94,7 +94,7 @@ ai:
     timeout: 120s              # local generation on a small VM is slow
   groq:
     base-url: https://api.groq.com/openai/v1
-    model: llama-3.3-70b-versatile
+    model: openai/gpt-oss-120b   # llama-3.3-70b-versatile was decommissioned by Groq (validated live Sep 2026)
     api-key: ${GROQ_API_KEY:}
     daily-limit: 14400
     minute-limit: 30

@@ -2,7 +2,7 @@
 
 > AI-powered Knowledge Discovery Platform for the Tor Network.
 
-**Current Phase:** Phase 3 code complete — real generation pipeline (summarize / classify / translate) with a multi-provider `AIOrchestrator` (Ollama, Groq, Gemini Flash), an AI Cost Optimizer, an illegal-content guard, and enrichment surfaced in search. End-to-end validation against the real cloud providers is still pending (see `docs/onionmind-fase3-sdd.md` §11.4 / §12). Phase 2 (semantic search) landed in PRs #5 and #6; its exit gate has not yet been re-run against live Ollama + Qdrant.
+**Current Phase:** Phase 3 validated end-to-end (2026-09-06) — real generation pipeline (summarize / classify / translate) with a multi-provider `AIOrchestrator` (Ollama, Groq, Gemini), an AI Cost Optimizer, an illegal-content guard, and enrichment surfaced in search, all proven against live Groq + Gemini + Ollama (see `docs/onionmind-fase3-sdd.md` §11.4 / §12). Phase 2's exit gate has also been re-run against live Ollama + Qdrant and its `min-score` recalibrated from real corpus data (§P2-1/P2-2).
 
 **Tech Stack:** Go (crawler) • Java 25 (Spring Boot 4.1 + Spring Modulith) • PostgreSQL • Redpanda • React
 
@@ -63,8 +63,8 @@ Most Tor search engines are link lists without ranking or context. OnionMind cha
 |-------|-------|--------|---|
 | **0** | Repository, CI, Docker Compose, initial schema | ✅ Complete | Infrastructure boots, tests pass |
 | **1** | Crawler + full-text search (real MVP) | ✅ Complete | Discover → crawl → index → search in minutes |
-| **2** | Semantic search (embeddings + Qdrant) | 🟡 Code merged (PR #5, #6) — live gate not re-run | Concept-based search works |
-| **3** | AI generation (summarize, classify, translate) | 🟡 Code complete — live-provider validation pending | New page summarized in minutes, quota never exceeded |
+| **2** | Semantic search (embeddings + Qdrant) | ✅ Complete — live gate re-run 2026-09-06 | Concept-based search works |
+| **3** | AI generation (summarize, classify, translate) | ✅ Complete — validated live 2026-09-06 | New page summarized in minutes, quota never exceeded |
 | **4** | Knowledge graph + versioning | ⏳ Planned | "What changed?" answers correctly |
 | **5** | Full RAG + Agent Playground | ⏳ Planned | RAG pipeline functional, real-world tested |
 | **6** | External connectors (RSS, GitHub, PDF) | ⏳ Backlog | — |

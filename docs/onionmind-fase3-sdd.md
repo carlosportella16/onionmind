@@ -289,7 +289,7 @@ public interface AIProvider {
 | Adapter | Endpoint | Modelo (config) | Quota | Papel |
 |---------|----------|-----------------|-------|-------|
 | `OllamaProvider` | `POST /api/generate` (local) | `llama3.1:8b` | ilimitada | fallback final, texto curto não-crítico |
-| `GroqProvider` | `POST /chat/completions` (OpenAI-compat) | `llama-3.3-70b-versatile` | diária + por minuto | 1ª opção p/ texto longo/crítico — latência baixíssima |
+| `GroqProvider` | `POST /chat/completions` (OpenAI-compat) | `openai/gpt-oss-120b` | diária + por minuto | 1ª opção p/ texto longo/crítico — latência baixíssima |
 | `GeminiProvider` | `POST /models/{model}:generateContent` | `gemini-2.5-flash` | diária mais apertada, contexto 1M | 2ª opção — cobre textos que estouram contexto dos outros |
 
 Adapters usam `RestClient` (Spring 6). Sem SDK proprietário — Groq é OpenAI-compatible, Gemini é REST simples. Cada um mapeia sua resposta pro `CompletionResponse` comum. Erro HTTP 429 → o adapter marca a cota como esgotada no `ProviderQuotaTracker` e o router segue pra frente.
@@ -486,11 +486,11 @@ Contra Groq + Gemini reais (chaves de dev) + Ollama local:
 Estado da implementação `phase3-ai-generation` (branch `feat/phase-3-llm-integration`): código completo e testado (`./gradlew clean test jacocoTestReport` — 197 testes, 0 falhas, cobertura de linha 92%, `ModularityTest` verde). Itens marcados `[~]` estão implementados mas dependem de validação manual contra provedores reais (seção 11.4).
 
 ### Pendências da Fase 2 (pré-condição do gate)
-- [ ] P2-1: gate de saída da Fase 2 validado contra Ollama + Qdrant reais, documentado — **pendente** (exige infra ao vivo)
-- [ ] P2-2: `min-score` calibrado contra corpus real, número registrado — **pendente** (depende de P2-1)
+- [x] P2-1: gate de saída da Fase 2 validado contra Ollama + Qdrant reais — **fechado 2026-09-06**, ver nota abaixo
+- [x] P2-2: `min-score` calibrado contra corpus real — **fechado 2026-09-06** (0.35 → 0.45), ver nota abaixo
 - [x] P2-3: `application.yml` / `-sandbox` / `-prod` alinhados; `ai.enabled` separado de `embedding.enabled` (D1)
 - [x] P2-4: conclusão da Fase 2 registrada (README + master-sdd, link PRs #5/#6) — nota registra que o gate ao vivo ainda não foi re-executado
-- [x] P2-5: `BadSqlGrammarException` da `EVENT_PUBLICATION` rastreada — ver nota abaixo
+- [x] P2-5: `BadSqlGrammarException` da `EVENT_PUBLICATION` — **fechado** (`spring.modulith.events.jdbc.schema-initialization.enabled=true`), ver nota abaixo
 
 ### Módulo `ai`
 - [x] `AIOrchestrator` expõe `summarize`, `classify`, `translate`, `detectLanguage`, `embed`; `DefaultAIOrchestrator` implementa via decorator chain + loop de escalonamento
@@ -524,19 +524,49 @@ Estado da implementação `phase3-ai-generation` (branch `feat/phase-3-llm-integ
 - [x] Cobertura ≥ 80% (linha 92%) mantida; `ModularityTest` verde (`ai` com `allowedDependencies = {}`)
 - [x] CI verde sem chaves de API — `Fase3AiGenerationGateTest` usa `@Primary` fake de `AIOrchestrator`, `ProviderQuotaTracker`/`CacheDecorator` mockados
 
-### Nota P2-5 — `BadSqlGrammarException` na `EVENT_PUBLICATION`
-No shutdown de qualquer `@SpringBootTest`, o `DisposableBeanAdapter` do `eventPublicationRegistry` (Spring Modulith) tenta um `SELECT ... FROM EVENT_PUBLICATION` que falha com `bad SQL grammar` — a tabela não é criada porque a Fase 3 ainda não usa eventos in-process. Build continua verde (só no destroy hook, depois dos testes). **Fechar antes da Fase 4**, que introduz `PageIndexedEvent` de verdade (ADR-009) e precisa do Event Publication Registry funcionando: adicionar a migration da tabela `event_publication` do Modulith (ou `spring.modulith.events.jdbc.schema-initialization.enabled=true`).
+### Nota P2-5 — `BadSqlGrammarException` na `EVENT_PUBLICATION` — **fechado 2026-09-06**
+No shutdown de qualquer `@SpringBootTest`, o `DisposableBeanAdapter` do `eventPublicationRegistry` (Spring Modulith) tentava um `SELECT ... FROM EVENT_PUBLICATION` que falhava com `bad SQL grammar` — a tabela não existia porque a Fase 3 ainda não usa eventos in-process. Corrigido com `spring.modulith.events.jdbc.schema-initialization.enabled=true` em `application.yml`. Confirmado: 0 ocorrências do warning numa suíte completa após a mudança (antes aparecia ao menos 1x por run).
+
+### Validação real — 2026-09-06 (Groq + Gemini reais, Ollama local, chaves de dev revogadas após o teste)
+
+Dois bugs de correção só apareceram rodando contra provedores de verdade — nenhum teste com fake/mock os pegava:
+
+1. **`ProviderQuota.availableWithMargin` comparava a base errada.** `ProviderQuotaTracker.remaining()` devolvia `effective = min(cotaDiaRestante, cotaMinutoRestante)` emparelhado com o limite **diário**. Com os limites documentados (Groq 30/min, 14400/dia, margem 5% = 720), `30 > 720` nunca é verdade — Groq e Gemini eram excluídos do ladder **sempre**, mesmo com cota cheia no início do dia. Os testes unitários (`ProviderQuotaTrackerTest`, `GroqProviderTest`) usavam limites onde minuto e dia são próximos (ex. `ProviderLimits(100, 5)`), o que mascarava o problema. Corrigido em `ProviderQuotaTracker.remaining()`: agora empareia a sobra com o limite que de fato está no comando (minuto ou dia, o que for mais apertado no momento). Sem isso, o Cost Optimizer nunca usava a nuvem em produção — todo tráfego ia pro Ollama silenciosamente.
+2. **Modelo Groq `llama-3.3-70b-versatile` foi descontinuado** (`404 model_not_found` em toda chamada real). Catálogo atual da Groq (checado via `/v1/models`) não tem mais esse nome. Trocado para `openai/gpt-oss-120b` em `application.yml` e `application-prod.yml` (`GROQ_MODEL` continua sobrescrevível).
+
+Depois dos dois fixes, rodada de validação com 4 páginas reais (>500 tokens aprox., forçando o ladder `CLOUD_FIRST`), limites de minuto propositalmente apertados (`groq=2`, `gemini=1`) pra forçar o estouro:
+
+- Groq: 4 chamadas reais bem-sucedidas (`CLASSIFY`, `SUMMARIZE`×2, `TRANSLATE`) antes de estourar a cota do minuto.
+- Ao estourar, o router migrou pra Gemini automaticamente — 2 chamadas reais bem-sucedidas (`TRANSLATE`, `DETECT_LANGUAGE`), sem lançar exceção pro pipeline.
+- Com Groq e Gemini estourados na mesma janela de minuto, o restante caiu pro Ollama local (`CLASSIFY`, `SUMMARIZE`, `TRANSLATE`) — o piso nunca ficou sem cota.
+- Confiança observada (janela do teste): `SUMMARIZE` média ≈0.97, `CLASSIFY` ≈0.86, `TRANSLATE` ≈0.75, `DETECT_LANGUAGE` com cache hits média mais baixa (poucas amostras reais).
+- 4/4 páginas terminaram `ai_status=processed`; nenhuma chamada chegou perto do limite diário real (14400 Groq / 1500 Gemini) — poucas dezenas de requests no total.
+- Textos curtos (<500 tokens aprox.) confirmados indo direto pro Ollama (`LOCAL_FIRST`), como desenhado — cota de nuvem intocada nesses casos.
+
+P2-1/P2-2 (gate da Fase 2 contra Qdrant real + calibração de `min-score`) **fechados numa rodada seguinte** — ver nota própria acima.
+
+### Nota P2-1/P2-2 — gate da Fase 2 e calibração de `min-score` — **fechado 2026-09-06**
+
+Rodado com `embedding.enabled=true` / `ai.enabled=false` (modo `OllamaAIOrchestrator`, só `embed()`), Ollama real (`nomic-embed-text`) e Qdrant real — mesmo cenário do `Fase2SemanticSearchGateTest`, mas sem os fakes de `VectorStore`/`AIOrchestrator`.
+
+**Um terceiro bug de correção só apareceu aqui**, de novo por causa de um corpus real: `SemanticSearchService.search()` passava o `topK` do chamador direto como o `limit` bruto do Qdrant (nível de chunk, não de página). Uma página degenerada da base de dev (uma listagem de links do ahmia.fi, 427 dos 454 pontos da coleção — puro texto de URLs, sem linguagem natural) ocupava sozinha toda a janela de candidatos em qualquer `topK` até 100, empurrando páginas genuinamente relevantes pra fora do resultado antes mesmo do filtro de `min-score` rodar — a página-conceito do gate (ver abaixo) não aparecia nem pedindo `topK=500` (o controller limita a 100). Nenhum teste pegava porque o `FakeVectorStore` nos testes unitários nunca simula uma página com centenas de chunks. Corrigido em `SemanticSearchService`: busca um pool de candidatos bem maior que o pedido pelo chamador (`topK×10`, teto 500), deduplica por URL, só depois corta pro tamanho pedido.
+
+**Gate P2-1** (com o fix acima): página `concept-only-validate.onion` inserida com texto que nunca contém o termo literal da query ("moeda digital anonima e blockchain descentralizado" vs. query `criptomoedas`) — confirmado via SQL que `search_vector @@ websearch_to_tsquery(...)` é `false` (full-text estruturalmente não acha). `/api/search/semantic?q=criptomoedas` e `/api/search?q=criptomoedas` (híbrido) acharam a página (score real 0.4665), provando "busca por conceito encontra o que full-text não encontrava" contra infra 100% real.
+
+**Calibração P2-2**: 7 queries reais (relevantes, cross-topic e gibberish) contra ~1600 chunks candidatos. Distribuição observada: p50=0.39, p90=0.485, máximo de ruído puro (query sem sentido) ≈0.52, correspondências diretas de tópico 0.63–0.74, correspondência conceitual parafraseada (o próprio gate) ≈0.47. `min-score` antigo (0.35) ficava abaixo da mediana — não filtrava quase nada. Subido para **0.45**: mantém o match conceitual e os diretos, corta a maior parte do ruído.
+
+**Limitação conhecida, documentada em vez de forçada**: a página degenerada (listagem de links) pontua ~0.49–0.52 contra qualquer query, inclusive gibberish — nenhum valor de `min-score` separa isso de um match conceitual genuíno sem também perder o match genuíno, porque o "ruído" dessa página específica pontua mais alto que uma parafraseamento real. A correção de verdade é um filtro de qualidade de conteúdo antes de embedar (pular páginas que são majoritariamente listas de links/URLs), não um número — fica como item futuro, não fechado aqui.
 
 ### Gate final
 Uma página nova é automaticamente resumida, classificada e (se necessário) traduzida dentro de alguns minutos após ser indexada, com o provedor de IA escolhido automaticamente e sem estourar nenhum limite gratuito sob uso normal.
 
-**Status:** 🟡 provado com fakes (`Fase3AiGenerationGateTest`: evento `raw-pages` → `ai_status=processed` com summary/category/language; página não-PT também traduzida). **Validação real pendente** — rodar a seção 11.4 contra Groq + Gemini + Ollama ao vivo e registrar aqui data, tempo observado, distribuição de `confidence` e ajustes, no padrão da Fase 1.
+**Status:** 🟢 validado contra Groq + Gemini + Ollama reais em 2026-09-06 (ver seção acima), e P2-1/P2-2 fechados no mesmo dia com Qdrant + Ollama reais (ver nota própria). Três bugs de correção achados e corrigidos nessas rodadas — todos invisíveis pros testes com fake/mock: margem de cota (Groq/Gemini nunca eram escolhidos), modelo Groq descontinuado, e uma página degenerada saturando o candidate pool da busca semântica. DoD da Fase 3 fechado; limitação de corpus (filtro de qualidade de conteúdo pré-embedding) registrada como item futuro, não bloqueante.
 
 ## 13. Prontidão para a Fase 4
 
 Revisado ao fim da implementação da Fase 3:
 
 - **`AIOrchestrator` disponível não bloqueia a Fase 4.** `extractEntities` foi deliberadamente deixado fora da interface (não é um `default` que lança) — a Fase 4 adiciona o método + um `EntityProcessor` sem tocar nos quatro processors existentes. O diff estrutural sumarizado entre versões reusa `summarize` como está.
-- **Eventos in-process (ADR-009).** `ingestion` já é o publicador natural: `IngestionPipeline.process` roda numa transação e conhece `url`/`content_hash`/`version`. Adicionar `events.publishEvent(new PageIndexedEvent(...))` ao fim é aditivo — nenhum `ContentProcessor` precisa mudar. **Bloqueador conhecido:** a tabela `event_publication` do Modulith não existe (nota P2-5) — resolver primeiro.
+- **Eventos in-process (ADR-009).** `ingestion` já é o publicador natural: `IngestionPipeline.process` roda numa transação e conhece `url`/`content_hash`/`version`. Adicionar `events.publishEvent(new PageIndexedEvent(...))` ao fim é aditivo — nenhum `ContentProcessor` precisa mudar. **Bloqueador P2-5 resolvido** (2026-09-06) — tabela `event_publication` agora é criada pelo próprio Modulith no boot.
 - **`content_hash` como gate.** `AiEnrichmentGate` e `EmbeddingProcessor` já provam o padrão "conteúdo não mudou → não reprocessa". O motor de diff da Fase 4 usa o mesmo sinal para decidir quando re-extrair entidades.
 - **Modulith.** `graph`/`intelligence` da Fase 4 entram como módulos novos reagindo a `PageIndexedEvent`; `ai` com `allowedDependencies = {}` continua isolado e reutilizável.

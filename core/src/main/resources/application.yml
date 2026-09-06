@@ -70,10 +70,16 @@ embedding:
   backfill-interval-ms: 300000
   # Cosine similarity floor for semantic search hits — Qdrant's k-NN always returns topK
   # nearest points even when nothing is actually relevant (small corpus, unrelated query).
-  # nomic-embed-text on short/generic text clusters tightly (~0.4-0.5 even for unrelated
-  # pairs), so this must stay low enough to not false-negative real matches — tune per
-  # embedding model/corpus, this is a floor not a curated relevance score.
-  min-score: 0.35
+  # Calibrated live 2026-09-06 (fase3-sdd sec 11.4/P2-2) against real nomic-embed-text +
+  # Qdrant: across 7 queries / ~1600 candidate chunks, p50=0.39, p90=0.485, gibberish/noise
+  # topped out at ~0.52, genuine concept-level (paraphrased, no literal term overlap) matches
+  # landed ~0.47, direct on-topic matches scored 0.63+. 0.35 was barely above the median —
+  # it filtered almost nothing. 0.45 keeps concept-level and direct matches while cutting most
+  # of the noise floor. Known gap: one degenerate page (a raw link-list with hundreds of
+  # near-duplicate chunks) scores ~0.49-0.52 against nearly any query, including gibberish —
+  # no min-score value separates that from a genuine paraphrase match without also losing the
+  # paraphrase; the real fix is a content-quality gate before embedding, not this number.
+  min-score: 0.45
 
 # Phase 3: generative AI (summarize / classify / translate). Separate from embedding.enabled
 # so embeddings and generation can roll out independently (fase3-sdd sec. 8, D1).

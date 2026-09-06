@@ -39,7 +39,7 @@ embedding:
   chunk-size: 512
   chunk-overlap-percent: 15
   batch-size: 100
-  min-score: 0.35
+  min-score: 0.45   # calibrated live 2026-09-06 (fase3-sdd sec 11.4/P2-2) — see application.yml
 
 # Phase 3: same shape as application.yml, only enabled + keys differ per environment (fase3-sdd D1).
 ai:

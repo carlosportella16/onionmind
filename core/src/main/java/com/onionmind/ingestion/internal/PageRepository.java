@@ -146,10 +146,16 @@ public class PageRepository {
     }
 
     private void updateWithNewVersion(Document doc, String hash, int newVersion) {
+        // Reset ai_status/embedding_status to 'pending' so the backfill jobs pick this page
+        // back up (fix-ingestion-stability: AI/embedding no longer run inline here, so nothing
+        // else would ever re-enrich changed content — they only scan for pending/failed rows).
+        // Without this, a page whose content changes keeps its old, now-stale enrichment
+        // status forever.
         jdbc.update("""
             UPDATE pages
             SET extracted_text = ?, content_hash = ?, version = ?,
-                raw_html = ?, last_seen_at = now()
+                raw_html = ?, last_seen_at = now(),
+                ai_status = 'pending', embedding_status = 'pending'
             WHERE url = ?
             """, doc.extractedText(), hash, newVersion, doc.rawHtml(), doc.url());
     }

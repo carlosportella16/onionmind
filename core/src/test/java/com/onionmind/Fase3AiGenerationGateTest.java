@@ -9,6 +9,7 @@ import com.onionmind.ai.TaskContext;
 import com.onionmind.ai.Translation;
 import com.onionmind.ai.decorator.CacheDecorator;
 import com.onionmind.ai.routing.ProviderQuotaTracker;
+import com.onionmind.ingestion.AiEnrichmentBackfillJob;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -47,6 +48,8 @@ class Fase3AiGenerationGateTest {
     private KafkaContainer kafkaContainer;
     @Autowired
     private JdbcTemplate jdbc;
+    @Autowired
+    private AiEnrichmentBackfillJob backfillJob;
 
     @MockitoBean
     private ProviderQuotaTracker quotaTracker;
@@ -77,6 +80,15 @@ class Fase3AiGenerationGateTest {
     }
 
     private Map<String, Object> awaitEnriched(String url) {
+        // fix-ingestion-stability: AI enrichment no longer runs inline on the Kafka listener
+        // thread — it only runs on AiEnrichmentBackfillJob's schedule (every ai.backfill.interval-ms
+        // in production). The gate itself still holds: a page reaches ai_status='pending' fast,
+        // and gets enriched next time the backfill job runs — triggered directly here instead of
+        // waiting out its real interval.
+        await().atMost(Duration.ofSeconds(10)).untilAsserted(() ->
+            assertThat(jdbc.queryForObject("SELECT ai_status FROM pages WHERE url = ?", String.class, url))
+                .isEqualTo("pending"));
+        backfillJob.run();
         await().atMost(Duration.ofSeconds(30)).untilAsserted(() ->
             assertThat(jdbc.queryForObject("SELECT ai_status FROM pages WHERE url = ?", String.class, url))
                 .isEqualTo("processed"));

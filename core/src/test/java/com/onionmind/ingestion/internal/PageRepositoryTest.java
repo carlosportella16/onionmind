@@ -83,6 +83,21 @@ class PageRepositoryTest {
     }
 
     @Test
+    void changedContentResetsAiAndEmbeddingStatusToPending() {
+        String url = "http://recrawled-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "version one content"),
+            new EmbeddingOutcome(EmbeddingOutcome.EMBEDDED, null));
+        repository.updateAiFields(url, AiOutcome.processed(new Enrichment(
+            new LanguageTag("pt", 1.0), new Summary("resumo", 0.9),
+            new Classification("blog", 0.9), null)));
+
+        repository.upsertWithVersioning(doc(url, "version two, different content"));
+
+        var row = jdbc.queryForMap("SELECT ai_status, embedding_status FROM pages WHERE url = ?", url);
+        assertThat(row).containsEntry("ai_status", "pending").containsEntry("embedding_status", "pending");
+    }
+
+    @Test
     void newPageWithoutEmbeddingOutcomeStaysAtDefaultPendingStatus() {
         String url = "http://no-embedding-" + System.nanoTime() + ".onion";
 

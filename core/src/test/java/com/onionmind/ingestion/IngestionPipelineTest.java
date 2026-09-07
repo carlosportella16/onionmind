@@ -1,10 +1,8 @@
 package com.onionmind.ingestion;
 
 import com.onionmind.content.AiEnrichingProcessor;
-import com.onionmind.content.AiOutcome;
 import com.onionmind.content.ContentProcessor;
 import com.onionmind.content.Document;
-import com.onionmind.content.EmbeddingOutcome;
 import com.onionmind.content.EmbeddingProcessor;
 import com.onionmind.content.ProcessingResult;
 import com.onionmind.ingestion.internal.PageRepository;
@@ -17,7 +15,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.Instant;
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
@@ -110,7 +107,9 @@ class IngestionPipelineTest {
     }
 
     @Test
-    void aiEnrichmentIsAggregatedAndPersistedAfterUpsert() {
+    void aiEnrichingProcessorsAreNeverInvokedOnTheLivePath() {
+        // fix-ingestion-stability: AI enrichment must never run on the Kafka listener thread —
+        // AiEnrichmentBackfillJob is the only thing that invokes these processors now.
         Document afterSanitize = event().toDocument().withExtractedText("some page text here");
         ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
         AiEnrichingProcessor ai = aiProcessorReturning(30, ProcessingResult.success(afterSanitize));
@@ -118,68 +117,25 @@ class IngestionPipelineTest {
         var pipeline = new IngestionPipeline(List.of(sanitizer, ai), repository);
         pipeline.process(event());
 
-        InOrder inOrder = inOrder(repository);
-        inOrder.verify(repository).upsertWithVersioning(any(), any());
-        inOrder.verify(repository).updateAiFields(eq("http://example.onion"),
-            argThat(o -> o.status().equals(AiOutcome.PROCESSED)));
-    }
-
-    @Test
-    void aiProcessorFailureIsPersistedAsPartialFailure() {
-        Document afterSanitize = event().toDocument().withExtractedText("some page text here");
-        ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
-        AiEnrichingProcessor ai = aiProcessorReturning(30, ProcessingResult.failed(afterSanitize, "providers down"));
-
-        new IngestionPipeline(List.of(sanitizer, ai), repository).process(event());
-
-        verify(repository).updateAiFields(any(), argThat(o -> o.status().equals(AiOutcome.FAILED_TRANSIENT)));
-    }
-
-    @Test
-    void unchangedAiContentDoesNotTouchAiFields() {
-        Document afterSanitize = event().toDocument().withExtractedText("some page text here");
-        ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
-        AiEnrichingProcessor ai = aiProcessorReturning(30, ProcessingResult.unchanged(afterSanitize));
-
-        new IngestionPipeline(List.of(sanitizer, ai), repository).process(event());
-
-        verify(repository).upsertWithVersioning(any(), any());
+        verify(ai, never()).process(any());
         verify(repository, never()).updateAiFields(any(), any());
+        verify(repository).upsertWithVersioning(any(), isNull());
     }
 
     @Test
-    void embeddingProcessorOutcomeIsPassedToRepository() {
+    void embeddingProcessorIsNeverInvokedOnTheLivePath() {
+        // fix-ingestion-stability: embedding must never run on the Kafka listener thread —
+        // EmbeddingBackfillJob is the only thing that invokes it now.
         Document afterSanitize = event().toDocument().withExtractedText("some page text here");
         ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
 
         EmbeddingProcessor embedding = mock(EmbeddingProcessor.class);
         lenient().when(embedding.order()).thenReturn(100);
-        lenient().when(embedding.supports(any())).thenReturn(true);
-        lenient().when(embedding.process(any())).thenReturn(ProcessingResult.success(afterSanitize));
 
         var pipeline = new IngestionPipeline(List.of(sanitizer, embedding), repository);
         pipeline.process(event());
 
-        verify(repository).upsertWithVersioning(any(),
-            argThat(outcome -> outcome != null && outcome.status().equals(EmbeddingOutcome.EMBEDDED)));
-    }
-
-    @Test
-    void failedEmbeddingOutcomeCarriesTheErrorMessage() {
-        Document afterSanitize = event().toDocument().withExtractedText("some page text here");
-        ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
-
-        EmbeddingProcessor embedding = mock(EmbeddingProcessor.class);
-        lenient().when(embedding.order()).thenReturn(100);
-        lenient().when(embedding.supports(any())).thenReturn(true);
-        lenient().when(embedding.process(any())).thenReturn(ProcessingResult.failed(afterSanitize, "ollama unreachable"));
-
-        var pipeline = new IngestionPipeline(List.of(sanitizer, embedding), repository);
-        pipeline.process(event());
-
-        verify(repository).upsertWithVersioning(any(),
-            argThat(outcome -> outcome != null
-                && outcome.status().equals(EmbeddingOutcome.FAILED_TRANSIENT)
-                && outcome.errorMessage().equals("ollama unreachable")));
+        verify(embedding, never()).process(any());
+        verify(repository).upsertWithVersioning(any(), isNull());
     }
 }

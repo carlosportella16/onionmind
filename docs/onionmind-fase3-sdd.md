@@ -557,10 +557,18 @@ Rodado com `embedding.enabled=true` / `ai.enabled=false` (modo `OllamaAIOrchestr
 
 **Limitação conhecida, documentada em vez de forçada**: a página degenerada (listagem de links) pontua ~0.49–0.52 contra qualquer query, inclusive gibberish — nenhum valor de `min-score` separa isso de um match conceitual genuíno sem também perder o match genuíno, porque o "ruído" dessa página específica pontua mais alto que uma parafraseamento real. A correção de verdade é um filtro de qualidade de conteúdo antes de embedar (pular páginas que são majoritariamente listas de links/URLs), não um número — fica como item futuro, não fechado aqui.
 
+### Nota — bug do scheduler de backfill fechado (`fix-large-page-backfill-limits`, 2026-09-07)
+
+Achado durante a validação de `fix-ingestion-stability` (2026-09-07): `AiEnrichmentBackfillJob` e `EmbeddingBackfillJob` compartilhavam a única thread padrão do `@Scheduled` do Spring Boot (`spring.task.scheduling.pool.size` default 1) — uma página de 658KB travou `EmbeddingBackfillJob` por 13+ minutos, e nesse tempo todo `AiEnrichmentBackfillJob` nunca rodou, mesmo tendo seu próprio agendamento de 5min. Corrigido subindo `spring.task.scheduling.pool.size` pra 2. Confirmado ao vivo: nova rodada (2026-09-07) mostra os dois jobs logando no mesmo instante (`scheduling-1`/`scheduling-2` em paralelo) em vez de um esperando o outro.
+
+Junto nessa rodada, achado e fechado outro bug adjacente: `pages.search_vector` (tsvector `GENERATED`) tem limite próprio do Postgres de ~1MB — as mesmas duas páginas reais que falhavam no Kafka (`/banned/`, `/blacklist/banned/`, ~1,9MB cada) agora publicavam certinho mas falhavam no `INSERT` uma camada abaixo. Corrigido com migration `V6` capando só a entrada do índice (`left(extracted_text, 500000)`) — `extracted_text` continua íntegro. As duas páginas agora aparecem na tabela `pages`.
+
+**Timing real desta rodada não ficou limpo**: uma página levou 26min16s de `first_seen_at` a `ai_processed_at` — mas dominado por instabilidade real dos provedores no momento do teste (Ollama falhando repetidamente, Gemini devolvendo HTTP 503 "high demand"), não pelo bug do scheduler (esse já provado corrigido pela execução concorrente). Não é o número pra usar como referência do gate — só confirma que nada mais trava, mesmo sob falha externa real.
+
 ### Gate final
 Uma página nova é automaticamente resumida, classificada e (se necessário) traduzida dentro de alguns minutos após ser indexada, com o provedor de IA escolhido automaticamente e sem estourar nenhum limite gratuito sob uso normal.
 
-**Status:** 🟢 validado contra Groq + Gemini + Ollama reais em 2026-09-06 (ver seção acima), e P2-1/P2-2 fechados no mesmo dia com Qdrant + Ollama reais (ver nota própria). Três bugs de correção achados e corrigidos nessas rodadas — todos invisíveis pros testes com fake/mock: margem de cota (Groq/Gemini nunca eram escolhidos), modelo Groq descontinuado, e uma página degenerada saturando o candidate pool da busca semântica. DoD da Fase 3 fechado; limitação de corpus (filtro de qualidade de conteúdo pré-embedding) registrada como item futuro, não bloqueante.
+**Status:** 🟢 validado contra Groq + Gemini + Ollama reais em 2026-09-06 (ver seção acima), e P2-1/P2-2 fechados no mesmo dia com Qdrant + Ollama reais (ver nota própria). Cinco bugs de correção achados e corrigidos nessas rodadas — todos invisíveis pros testes com fake/mock: margem de cota (Groq/Gemini nunca eram escolhidos), modelo Groq descontinuado, uma página degenerada saturando o candidate pool da busca semântica, consumer Kafka travando sob IA lenta (`fix-ingestion-stability`), e o scheduler de backfill + limite de tsvector do Postgres (`fix-large-page-backfill-limits`, nota acima). DoD da Fase 3 fechado; limitação de corpus (filtro de qualidade de conteúdo pré-embedding) registrada como item futuro, não bloqueante.
 
 ## 13. Prontidão para a Fase 4
 

@@ -46,7 +46,7 @@ func run(configPath string) error {
 	}
 
 	d := dedup.New(cfg.Redis.Addr, cfg.Redis.DedupTTL.Duration())
-	pub, err := publisher.New(cfg.Redpanda.Brokers, cfg.Redpanda.Topic)
+	pub, err := publisher.New(cfg.Redpanda.Brokers, cfg.Redpanda.Topic, cfg.Crawler.MaxPageSizeMB)
 	if err != nil {
 		return fmt.Errorf("create publisher: %w", err)
 	}

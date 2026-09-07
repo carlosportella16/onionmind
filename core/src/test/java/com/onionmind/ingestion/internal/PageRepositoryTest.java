@@ -98,6 +98,42 @@ class PageRepositoryTest {
     }
 
     @Test
+    void oversizedExtractedTextStillInsertsWithoutFailing() {
+        // fix-large-page-backfill-limits: text past Postgres's ~1MB tsvector limit used to
+        // fail the whole INSERT (search_vector's generated expression is now capped at
+        // 500,000 chars — V6 migration).
+        String url = "http://oversized-" + System.nanoTime() + ".onion";
+        String bigText = "conteudo real de pagina grande de verdade ".repeat(40000); // ~1.7MB
+
+        repository.upsertWithVersioning(doc(url, bigText));
+
+        assertThat(jdbc.queryForObject(
+            "SELECT length(extracted_text) FROM pages WHERE url = ?", Integer.class, url))
+            .isEqualTo(bigText.length());
+    }
+
+    @Test
+    void oversizedPageIsFindableByATermWithinTheIndexedPrefixAndKeepsFullText() {
+        String url = "http://oversized-search-" + System.nanoTime() + ".onion";
+        String earlyMarker = "termoinicialunico";
+        String lateMarker = "termofinalunico";
+        String filler = "conteudo de preenchimento repetido para estourar o limite do tsvector ";
+        String bigText = earlyMarker + " " + filler.repeat(40000) + " " + lateMarker; // ~2.9MB
+
+        repository.upsertWithVersioning(doc(url, bigText));
+
+        Boolean foundByEarlyTerm = jdbc.queryForObject(
+            "SELECT search_vector @@ websearch_to_tsquery('simple', ?) FROM pages WHERE url = ?",
+            Boolean.class, earlyMarker, url);
+        assertThat(foundByEarlyTerm).as("term within the indexed 500,000-char prefix").isTrue();
+
+        assertThat(jdbc.queryForObject(
+            "SELECT length(extracted_text) FROM pages WHERE url = ?", Integer.class, url))
+            .as("full extracted_text is stored, not truncated")
+            .isEqualTo(bigText.length());
+    }
+
+    @Test
     void newPageWithoutEmbeddingOutcomeStaysAtDefaultPendingStatus() {
         String url = "http://no-embedding-" + System.nanoTime() + ".onion";
 

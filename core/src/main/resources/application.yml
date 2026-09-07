@@ -22,6 +22,13 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       properties:
         spring.json.trusted.packages: "com.onionmind.ingestion"
+        # Default (1MiB) can't fetch a message the broker now accepts up to 12MiB
+        # (fix-ingestion-stability) — matches docker-compose's redpanda.kafka_batch_max_bytes.
+        max.partition.fetch.bytes: 12582912
+        # Defense-in-depth, not the fix (fix-ingestion-stability): IngestionPipeline no longer
+        # runs AI/embedding inline, so this listener should never approach the 300s default —
+        # raised anyway in case some future change puts real work back on this thread.
+        max.poll.interval.ms: 600000
   data:
     redis:
       # Phase 3: quota counters + AI response cache. Same instance the crawler uses

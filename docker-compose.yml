@@ -30,6 +30,20 @@ services:
       interval: 5s
       retries: 5
 
+  # kafka_batch_max_bytes is a cluster-wide property, not a node/boot flag — `rpk redpanda
+  # start --set` only applies node properties, so it has to be set after the cluster is up.
+  # Default (1MiB) rejects real crawled .onion pages before they even reach the producer's
+  # own MaxMessageBytes check — raised to match the crawler's max_page_size_mb=10 fetch
+  # ceiling with headroom (fix-ingestion-stability).
+  redpanda-config:
+    image: redpandadata/redpanda:v24.2.7
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["rpk cluster config set kafka_batch_max_bytes 12582912 -X admin.hosts=redpanda:9644"]
+    restart: "no"
+
   redpanda-console:
     image: redpandadata/console:v2.7.2
     environment:

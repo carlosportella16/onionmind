@@ -7,11 +7,14 @@ import com.onionmind.content.EmbeddingOutcome;
 import com.onionmind.content.Enrichment;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.support.GeneratedKeyHolder;
+import org.springframework.jdbc.support.KeyHolder;
 import org.springframework.stereotype.Repository;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.sql.PreparedStatement;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -29,27 +32,75 @@ public class PageRepository {
         upsertWithVersioning(doc, null);
     }
 
-    /** @param embeddingOutcome null when EmbeddingProcessor isn't in this build's pipeline. */
-    public void upsertWithVersioning(Document doc, EmbeddingOutcome embeddingOutcome) {
+    /**
+     * @param embeddingOutcome null when EmbeddingProcessor isn't in this build's pipeline.
+     * @return the page id/version and whether this call changed the content (Phase 4:
+     *         {@link com.onionmind.ingestion.IngestionPipeline} uses this to publish
+     *         {@code PageIndexedEvent}).
+     */
+    public UpsertOutcome upsertWithVersioning(Document doc, EmbeddingOutcome embeddingOutcome) {
         String hash = sha256(doc.extractedText());
         var existing = findByUrl(doc.url());
 
+        Long pageId;
+        int version;
+        boolean isNewVersion;
+
         if (existing.isEmpty()) {
-            insertNew(doc, hash);
+            pageId = insertNew(doc, hash);
+            version = 1;
+            isNewVersion = true;
         } else {
             var current = existing.get();
+            pageId = current.id();
             if (!current.contentHash().equals(hash)) {
                 // content changed: archive previous version, update
                 archiveVersion(current);
-                updateWithNewVersion(doc, hash, current.version() + 1);
+                version = current.version() + 1;
+                updateWithNewVersion(doc, hash, version);
+                isNewVersion = true;
             } else {
                 // identical content: only touch last_seen_at
                 touchLastSeen(current.id());
+                version = current.version();
+                isNewVersion = false;
             }
         }
 
         if (embeddingOutcome != null) {
             updateEmbeddingStatus(doc.url(), embeddingOutcome);
+        }
+
+        return new UpsertOutcome(pageId, version, isNewVersion);
+    }
+
+    /** The current extracted text of a page, if it exists — used by {@code PageContentLookup} (Phase 4, design.md D3). */
+    public Optional<String> findExtractedText(String url) {
+        return findByUrl(url).map(PageEntity::extractedText);
+    }
+
+    /** The page's AI-assigned category (Fase 3), if one was generated — used by {@code intelligence}'s CATEGORY alert rules. */
+    public Optional<String> findCategory(String url) {
+        try {
+            String category = jdbc.queryForObject(
+                "SELECT category->>'category' FROM pages WHERE url = ?", String.class, url);
+            return Optional.ofNullable(category);
+        } catch (EmptyResultDataAccessException e) {
+            return Optional.empty();
+        }
+    }
+
+    /** The archived text of the version right before {@code beforeVersion}, if one was archived. */
+    public Optional<String> findPreviousVersionExtractedText(String url, int beforeVersion) {
+        try {
+            String text = jdbc.queryForObject("""
+                SELECT pv.extracted_text
+                FROM page_versions pv JOIN pages p ON p.id = pv.page_id
+                WHERE p.url = ? AND pv.version = ?
+                """, String.class, url, beforeVersion - 1);
+            return Optional.ofNullable(text);
+        } catch (EmptyResultDataAccessException e) {
+            return Optional.empty();
         }
     }
 
@@ -131,11 +182,24 @@ public class PageRepository {
             """, outcome.status(), outcome.errorMessage(), url);
     }
 
-    private void insertNew(Document doc, String hash) {
-        jdbc.update("""
-            INSERT INTO pages (url, source_type, raw_html, extracted_text, content_hash, version)
-            VALUES (?, ?, ?, ?, ?, 1)
-            """, doc.url(), doc.sourceType(), doc.rawHtml(), doc.extractedText(), hash);
+    private Long insertNew(Document doc, String hash) {
+        KeyHolder keyHolder = new GeneratedKeyHolder();
+        jdbc.update(connection -> {
+            // Postgres' JDBC driver returns the whole row for RETURN_GENERATED_KEYS unless told
+            // which column(s) to return — pages has several (search_vector included), so without
+            // naming "id" explicitly, KeyHolder.getKey() sees multiple keys and throws.
+            PreparedStatement ps = connection.prepareStatement("""
+                INSERT INTO pages (url, source_type, raw_html, extracted_text, content_hash, version)
+                VALUES (?, ?, ?, ?, ?, 1)
+                """, new String[]{"id"});
+            ps.setString(1, doc.url());
+            ps.setString(2, doc.sourceType());
+            ps.setString(3, doc.rawHtml());
+            ps.setString(4, doc.extractedText());
+            ps.setString(5, hash);
+            return ps;
+        }, keyHolder);
+        return keyHolder.getKey().longValue();
     }
 
     private void archiveVersion(PageEntity current) {

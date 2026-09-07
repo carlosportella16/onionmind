@@ -8,11 +8,14 @@ import com.onionmind.content.EmbeddingOutcome;
 import com.onionmind.content.EmbeddingProcessor;
 import com.onionmind.content.ProcessingResult;
 import com.onionmind.ingestion.internal.PageRepository;
+import com.onionmind.ingestion.internal.UpsertOutcome;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Instant;
 import java.util.List;
@@ -29,6 +32,15 @@ class IngestionPipelineTest {
 
     @Mock
     private PageRepository repository;
+
+    @Mock
+    private ApplicationEventPublisher events;
+
+    @BeforeEach
+    void stubUpsertOutcome() {
+        lenient().when(repository.upsertWithVersioning(any(), any()))
+            .thenReturn(new UpsertOutcome(1L, 1, true));
+    }
 
     private RawPageEvent event() {
         return new RawPageEvent("http://example.onion", "tor", "<html>hi</html>", Instant.now());
@@ -58,7 +70,7 @@ class IngestionPipelineTest {
         ContentProcessor second = processorReturning(1, ProcessingResult.success(afterSecond));
         ContentProcessor first = processorReturning(0, ProcessingResult.success(afterFirst));
 
-        var pipeline = new IngestionPipeline(List.of(second, first), repository);
+        var pipeline = new IngestionPipeline(List.of(second, first), repository, events);
         pipeline.process(event());
 
         InOrder inOrder = inOrder(first, second);
@@ -76,7 +88,7 @@ class IngestionPipelineTest {
         ContentProcessor first = processorReturning(0, ProcessingResult.success(afterFirst));
         ContentProcessor second = processorReturning(1, ProcessingResult.failed(afterFirst, "boom"));
 
-        var pipeline = new IngestionPipeline(List.of(first, second), repository);
+        var pipeline = new IngestionPipeline(List.of(first, second), repository, events);
         pipeline.process(event());
 
         verify(repository).upsertWithVersioning(
@@ -87,7 +99,7 @@ class IngestionPipelineTest {
     void documentWithoutExtractedTextIsNotPersisted() {
         ContentProcessor noText = processorReturning(0, ProcessingResult.skipped(event().toDocument(), "empty html"));
 
-        var pipeline = new IngestionPipeline(List.of(noText), repository);
+        var pipeline = new IngestionPipeline(List.of(noText), repository, events);
         pipeline.process(event());
 
         verifyNoInteractions(repository);
@@ -100,7 +112,7 @@ class IngestionPipelineTest {
         ContentProcessor guard = processorReturning(5, ProcessingResult.halt(afterSanitize, "url-denylist"));
         ContentProcessor embedding = processorReturning(100, ProcessingResult.success(afterSanitize));
 
-        var pipeline = new IngestionPipeline(List.of(sanitizer, guard, embedding), repository);
+        var pipeline = new IngestionPipeline(List.of(sanitizer, guard, embedding), repository, events);
         pipeline.process(event());
 
         verify(repository).quarantine(
@@ -115,7 +127,7 @@ class IngestionPipelineTest {
         ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
         AiEnrichingProcessor ai = aiProcessorReturning(30, ProcessingResult.success(afterSanitize));
 
-        var pipeline = new IngestionPipeline(List.of(sanitizer, ai), repository);
+        var pipeline = new IngestionPipeline(List.of(sanitizer, ai), repository, events);
         pipeline.process(event());
 
         InOrder inOrder = inOrder(repository);
@@ -130,7 +142,7 @@ class IngestionPipelineTest {
         ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
         AiEnrichingProcessor ai = aiProcessorReturning(30, ProcessingResult.failed(afterSanitize, "providers down"));
 
-        new IngestionPipeline(List.of(sanitizer, ai), repository).process(event());
+        new IngestionPipeline(List.of(sanitizer, ai), repository, events).process(event());
 
         verify(repository).updateAiFields(any(), argThat(o -> o.status().equals(AiOutcome.FAILED_TRANSIENT)));
     }
@@ -141,7 +153,7 @@ class IngestionPipelineTest {
         ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
         AiEnrichingProcessor ai = aiProcessorReturning(30, ProcessingResult.unchanged(afterSanitize));
 
-        new IngestionPipeline(List.of(sanitizer, ai), repository).process(event());
+        new IngestionPipeline(List.of(sanitizer, ai), repository, events).process(event());
 
         verify(repository).upsertWithVersioning(any(), any());
         verify(repository, never()).updateAiFields(any(), any());
@@ -157,11 +169,35 @@ class IngestionPipelineTest {
         lenient().when(embedding.supports(any())).thenReturn(true);
         lenient().when(embedding.process(any())).thenReturn(ProcessingResult.success(afterSanitize));
 
-        var pipeline = new IngestionPipeline(List.of(sanitizer, embedding), repository);
+        var pipeline = new IngestionPipeline(List.of(sanitizer, embedding), repository, events);
         pipeline.process(event());
 
         verify(repository).upsertWithVersioning(any(),
             argThat(outcome -> outcome != null && outcome.status().equals(EmbeddingOutcome.EMBEDDED)));
+    }
+
+    @Test
+    void publishesPageIndexedEventAfterUpsert() {
+        Document afterSanitize = event().toDocument().withExtractedText("some page text here");
+        ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
+        when(repository.upsertWithVersioning(any(), any())).thenReturn(new UpsertOutcome(42L, 3, true));
+
+        new IngestionPipeline(List.of(sanitizer), repository, events).process(event());
+
+        verify(events).publishEvent(argThat((PageIndexedEvent e) ->
+            e.pageId().equals(42L) && e.url().equals("http://example.onion")
+                && e.version() == 3 && e.isNewVersion()));
+    }
+
+    @Test
+    void doesNotPublishAnEventWhenHalted() {
+        Document afterSanitize = event().toDocument().withExtractedText("blocked content");
+        ContentProcessor sanitizer = processorReturning(0, ProcessingResult.success(afterSanitize));
+        ContentProcessor guard = processorReturning(5, ProcessingResult.halt(afterSanitize, "url-denylist"));
+
+        new IngestionPipeline(List.of(sanitizer, guard), repository, events).process(event());
+
+        verifyNoInteractions(events);
     }
 
     @Test
@@ -174,7 +210,7 @@ class IngestionPipelineTest {
         lenient().when(embedding.supports(any())).thenReturn(true);
         lenient().when(embedding.process(any())).thenReturn(ProcessingResult.failed(afterSanitize, "ollama unreachable"));
 
-        var pipeline = new IngestionPipeline(List.of(sanitizer, embedding), repository);
+        var pipeline = new IngestionPipeline(List.of(sanitizer, embedding), repository, events);
         pipeline.process(event());
 
         verify(repository).upsertWithVersioning(any(),

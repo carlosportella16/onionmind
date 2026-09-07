@@ -4,6 +4,7 @@ import com.onionmind.TestcontainersConfiguration;
 import com.onionmind.ai.AIOrchestrator;
 import com.onionmind.ai.Classification;
 import com.onionmind.ai.Embedding;
+import com.onionmind.ai.Entity;
 import com.onionmind.ai.LanguageDetection;
 import com.onionmind.ai.Summary;
 import com.onionmind.ai.TaskContext;
@@ -56,6 +57,8 @@ class Fase2SemanticSearchGateTest {
 
     @BeforeEach
     void setUp() {
+        jdbc.update("DELETE FROM alerts");
+        jdbc.update("DELETE FROM page_diffs");
         jdbc.update("DELETE FROM page_versions");
         jdbc.update("DELETE FROM pages");
         jdbc.update("""
@@ -144,6 +147,16 @@ class Fase2SemanticSearchGateTest {
 
                 @Override
                 public LanguageDetection detectLanguage(String text, TaskContext ctx) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public List<Entity> extractEntities(String text, TaskContext ctx) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public Summary summarizeDiff(String previousText, String currentText, TaskContext ctx) {
                     throw new UnsupportedOperationException();
                 }
 

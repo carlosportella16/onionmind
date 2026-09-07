@@ -52,6 +52,27 @@ public class CacheDecorator {
         }
     }
 
+    /** Same cache, same key shape — {@link ValidatedEntities} just isn't {@link ValidatedResult}'s shape. */
+    public Optional<ValidatedEntities> getEntities(TaskType type, String text) {
+        String cached = redis.opsForValue().get(key(type, text));
+        if (cached == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(mapper.readValue(cached, ValidatedEntities.class));
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    public void putEntities(TaskType type, String text, ValidatedEntities result) {
+        try {
+            redis.opsForValue().set(key(type, text), mapper.writeValueAsString(result), ttl);
+        } catch (Exception e) {
+            // cache write failure must never fail the task
+        }
+    }
+
     private String key(TaskType type, String text) {
         return "ai-cache:%s:%s".formatted(type, sha256(text));
     }

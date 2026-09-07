@@ -22,6 +22,8 @@ class IngestionAiLagMetricTest {
 
     @BeforeEach
     void setUp() {
+        jdbc.update("DELETE FROM alerts");
+        jdbc.update("DELETE FROM page_diffs");
         jdbc.update("DELETE FROM page_versions");
         jdbc.update("DELETE FROM pages");
     }

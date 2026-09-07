@@ -1,5 +1,6 @@
 package com.onionmind.ai.decorator;
 
+import com.onionmind.ai.Entity;
 import com.onionmind.ai.TaskContext.TaskType;
 import com.onionmind.ai.provider.CompletionResponse;
 import org.junit.jupiter.api.Test;
@@ -64,5 +65,63 @@ class ValidationDecoratorTest {
         assertThat(validator.validate(
             new CompletionResponse("{\"summary\":\"x\",\"confidence\":-2}"), TaskType.SUMMARIZE).confidence())
             .isZero();
+    }
+
+    @Test
+    void parsesWellFormedEntityArray() {
+        ValidatedEntities r = validator.validateEntities(new CompletionResponse(
+            "[{\"type\":\"CRYPTO_WALLET\",\"value\":\"1A2b3C\",\"confidence\":0.9},"
+                + "{\"type\":\"ORGANIZATION\",\"value\":\"Acme Corp\",\"confidence\":0.8}]"));
+
+        assertThat(r.usable()).isTrue();
+        assertThat(r.entities()).containsExactly(
+            new Entity(Entity.EntityType.CRYPTO_WALLET, "1A2b3C", 0.9),
+            new Entity(Entity.EntityType.ORGANIZATION, "Acme Corp", 0.8));
+        assertThat(r.confidence()).isCloseTo(0.85, org.assertj.core.data.Offset.offset(0.0001)); // average of the two
+    }
+
+    @Test
+    void emptyArrayIsAConfidentNoEntitiesResult() {
+        ValidatedEntities r = validator.validateEntities(new CompletionResponse("[]"));
+
+        assertThat(r.usable()).isTrue();
+        assertThat(r.entities()).isEmpty();
+        assertThat(r.confidence()).isEqualTo(1.0);
+    }
+
+    @Test
+    void toleratesEntityArrayWrappedInProseOrFences() {
+        ValidatedEntities r = validator.validateEntities(new CompletionResponse(
+            "Aqui estão as entidades:\n```json\n[{\"type\":\"PERSON\",\"value\":\"Ana\",\"confidence\":0.7}]\n```"));
+
+        assertThat(r.entities()).containsExactly(new Entity(Entity.EntityType.PERSON, "Ana", 0.7));
+    }
+
+    @Test
+    void skipsMalformedEntriesButKeepsTheRest() {
+        ValidatedEntities r = validator.validateEntities(new CompletionResponse("""
+            [{"type":"NOT_A_REAL_TYPE","value":"x","confidence":0.9},
+             {"type":"PERSON","confidence":0.9},
+             {"type":"PERSON","value":"","confidence":0.9},
+             {"type":"LOCATION","value":"Berlin","confidence":0.6}]
+            """));
+
+        assertThat(r.entities()).containsExactly(new Entity(Entity.EntityType.LOCATION, "Berlin", 0.6));
+    }
+
+    @Test
+    void nonArrayResponseIsInvalid() {
+        ValidatedEntities r = validator.validateEntities(new CompletionResponse("not an array at all"));
+
+        assertThat(r.usable()).isFalse();
+        assertThat(r.entities()).isEmpty();
+    }
+
+    @Test
+    void entityConfidenceIsClampedToUnitRange() {
+        ValidatedEntities r = validator.validateEntities(new CompletionResponse(
+            "[{\"type\":\"PERSON\",\"value\":\"Ana\",\"confidence\":5}]"));
+
+        assertThat(r.entities().getFirst().confidence()).isEqualTo(1.0);
     }
 }

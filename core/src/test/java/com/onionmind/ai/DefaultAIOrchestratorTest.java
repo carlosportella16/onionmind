@@ -133,6 +133,58 @@ class DefaultAIOrchestratorTest {
     }
 
     @Test
+    void extractEntitiesRunsThroughTheSameEscalationLoop() {
+        ollama.script(ok("[{\"type\":\"CRYPTO_WALLET\",\"value\":\"1A2b3C\",\"confidence\":0.9}]"));
+
+        List<Entity> entities = orchestrator.extractEntities(TEXT, shortCtx());
+
+        assertThat(entities).containsExactly(new Entity(Entity.EntityType.CRYPTO_WALLET, "1A2b3C", 0.9));
+        assertThat(ollama.calls()).isEqualTo(1);
+        assertThat(groq.calls()).isZero();
+    }
+
+    @Test
+    void extractEntitiesEscalatesOnLowConfidence() {
+        ollama.script(ok("[{\"type\":\"PERSON\",\"value\":\"Ana\",\"confidence\":0.2}]"));
+        groq.script(ok("[{\"type\":\"PERSON\",\"value\":\"Ana\",\"confidence\":0.95}]"));
+
+        List<Entity> entities = orchestrator.extractEntities(TEXT, shortCtx());
+
+        assertThat(entities).containsExactly(new Entity(Entity.EntityType.PERSON, "Ana", 0.95));
+    }
+
+    @Test
+    void extractEntitiesTreatsAConfidentEmptyResultAsUsable() {
+        ollama.script(ok("[]"));
+
+        List<Entity> entities = orchestrator.extractEntities(TEXT, shortCtx());
+
+        assertThat(entities).isEmpty();
+        assertThat(groq.calls()).isZero(); // confidence 1.0 for "no entities found" — no escalation needed
+    }
+
+    @Test
+    void extractEntitiesThrowsOnlyWhenEveryProviderFailsHard() {
+        ollama.script(boom());
+        groq.script(boom());
+        gemini.script(boom());
+
+        assertThatThrownBy(() -> orchestrator.extractEntities(TEXT, shortCtx()))
+            .isInstanceOf(AllProvidersExhaustedException.class);
+    }
+
+    @Test
+    void summarizeDiffSendsBothVersionsAndRunsThroughTheSameLoop() {
+        ollama.script(ok("{\"summary\":\"a página passou a mencionar bitcoin\",\"confidence\":0.88}"));
+
+        Summary diff = orchestrator.summarizeDiff("texto antigo", "texto novo com bitcoin", shortCtx());
+
+        assertThat(diff.text()).isEqualTo("a página passou a mencionar bitcoin");
+        assertThat(diff.confidence()).isEqualTo(0.88);
+        assertThat(ollama.calls()).isEqualTo(1);
+    }
+
+    @Test
     void embedDelegatesToTheEmbedderNotTheLadder() {
         embedServer.responseBody = "{\"embeddings\":[[0.5,0.6,0.7]]}";
 

@@ -3,6 +3,7 @@ package com.onionmind.content;
 import com.onionmind.ai.AIOrchestrator;
 import com.onionmind.ai.Classification;
 import com.onionmind.ai.Embedding;
+import com.onionmind.ai.Entity;
 import com.onionmind.ai.LanguageDetection;
 import com.onionmind.ai.Summary;
 import com.onionmind.ai.TaskContext;
@@ -151,6 +152,16 @@ class EmbeddingProcessorTest {
 
         @Override
         public LanguageDetection detectLanguage(String text, TaskContext ctx) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public List<Entity> extractEntities(String text, TaskContext ctx) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Summary summarizeDiff(String previousText, String currentText, TaskContext ctx) {
             throw new UnsupportedOperationException();
         }
 

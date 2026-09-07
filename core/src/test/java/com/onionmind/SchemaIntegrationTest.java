@@ -38,4 +38,22 @@ class SchemaIntegrationTest {
                 Integer.class);
         assertThat(quarantineTable).isEqualTo(1);
     }
+
+    @Test
+    void v6CreatesEventPublicationRegistry() {
+        Integer table = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM information_schema.tables WHERE table_name = 'event_publication'",
+                Integer.class);
+        assertThat(table).isEqualTo(1);
+
+        // Exact column set the Spring Modulith JDBC event repository queries against (note P2-5).
+        Integer columns = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE table_name = 'event_publication'
+                  AND column_name IN ('id', 'listener_id', 'event_type', 'serialized_event',
+                                      'publication_date', 'completion_date', 'status',
+                                      'completion_attempts', 'last_resubmission_date')
+                """, Integer.class);
+        assertThat(columns).isEqualTo(9);
+    }
 }

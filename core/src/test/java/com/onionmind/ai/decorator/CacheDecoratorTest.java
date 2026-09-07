@@ -1,9 +1,12 @@
 package com.onionmind.ai.decorator;
 
+import com.onionmind.ai.Entity;
 import com.onionmind.ai.RedisTestSupport;
 import com.onionmind.ai.TaskContext.TaskType;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
 
 import java.time.Duration;
 
@@ -39,5 +42,29 @@ class CacheDecoratorTest {
 
         assertThat(cache.get(TaskType.CLASSIFY, "mesmo texto")).isEmpty();
         assertThat(cache.get(TaskType.SUMMARIZE, "mesmo texto")).isPresent();
+    }
+
+    @Test
+    void roundTripsValidatedEntities() {
+        ValidatedEntities entities = new ValidatedEntities(
+            List.of(new Entity(Entity.EntityType.CRYPTO_WALLET, "1A2b3C", 0.9)), 0.9, true);
+
+        cache.putEntities(TaskType.EXTRACT_ENTITIES, "algum texto", entities);
+
+        assertThat(cache.getEntities(TaskType.EXTRACT_ENTITIES, "algum texto")).get().isEqualTo(entities);
+    }
+
+    @Test
+    void entitiesCacheMissReturnsEmpty() {
+        assertThat(cache.getEntities(TaskType.EXTRACT_ENTITIES, "nunca visto")).isEmpty();
+    }
+
+    @Test
+    void emptyEntityListRoundTripsToo() {
+        ValidatedEntities noEntities = new ValidatedEntities(List.of(), 1.0, true);
+
+        cache.putEntities(TaskType.EXTRACT_ENTITIES, "texto sem entidades", noEntities);
+
+        assertThat(cache.getEntities(TaskType.EXTRACT_ENTITIES, "texto sem entidades")).get().isEqualTo(noEntities);
     }
 }

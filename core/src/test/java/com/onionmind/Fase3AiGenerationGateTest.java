@@ -3,6 +3,7 @@ package com.onionmind;
 import com.onionmind.ai.AIOrchestrator;
 import com.onionmind.ai.Classification;
 import com.onionmind.ai.Embedding;
+import com.onionmind.ai.Entity;
 import com.onionmind.ai.LanguageDetection;
 import com.onionmind.ai.Summary;
 import com.onionmind.ai.TaskContext;
@@ -27,6 +28,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.testcontainers.kafka.KafkaContainer;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -57,6 +59,8 @@ class Fase3AiGenerationGateTest {
 
     @BeforeEach
     void setUp() {
+        jdbc.update("DELETE FROM alerts");
+        jdbc.update("DELETE FROM page_diffs");
         jdbc.update("DELETE FROM page_versions");
         jdbc.update("DELETE FROM pages");
         producer = new KafkaProducer<>(
@@ -141,6 +145,16 @@ class Fase3AiGenerationGateTest {
                 @Override
                 public LanguageDetection detectLanguage(String text, TaskContext ctx) {
                     return new LanguageDetection("en", 0.8);
+                }
+
+                @Override
+                public List<Entity> extractEntities(String text, TaskContext ctx) {
+                    throw new UnsupportedOperationException("not used in this gate");
+                }
+
+                @Override
+                public Summary summarizeDiff(String previousText, String currentText, TaskContext ctx) {
+                    throw new UnsupportedOperationException("not used in this gate");
                 }
 
                 @Override

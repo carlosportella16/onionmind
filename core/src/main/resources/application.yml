@@ -28,6 +28,12 @@ spring:
       # for dedup — keyspaces are prefix-isolated (quota:* / ai-cache:* vs dedup:*).
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+  # Phase 4: Event Publication Registry (ADR-009, note P2-5 in fase3-sdd) — durability across
+  # a restart mid-publication. Schema comes from db/migrations/V6__event_publication.sql, not
+  # from Modulith's own schema-initialization flag (this project uses Flyway for every table).
+  modulith:
+    events:
+      republish-outstanding-events-on-restart: true
 
 server:
   port: 8081
@@ -104,3 +110,24 @@ illegal-content:
   url-denylist-path: classpath:security/onion-denylist.txt
   text-pattern-path: classpath:security/illegal-text-patterns.txt
   quarantine-retention-days: 30
+
+# Phase 4: housekeeping for the Event Publication Registry (ADR-009) — completed publications
+# older than this are purged periodically, or the table grows without bound.
+event-publication:
+  retention-days: 7
+  purge-interval-ms: 3600000
+
+# Phase 4: knowledge graph (EntityProcessor + Neo4j AuraDB Free, master-sdd sec. 10). Independent
+# on/off switch from ai.enabled/embedding.enabled — NoOpGraphStore covers graph.enabled=false.
+graph:
+  enabled: false
+
+# Phase 4: diff-between-versions + rule-based alerts, both reacting to PageIndexedEvent.
+# Independent flag — a deployment could run graph without intelligence or vice versa.
+intelligence:
+  enabled: false
+
+neo4j:
+  uri: ${NEO4J_URI:bolt://localhost:7687}
+  username: ${NEO4J_USERNAME:neo4j}
+  password: ${NEO4J_PASSWORD:onionmind_dev_only}

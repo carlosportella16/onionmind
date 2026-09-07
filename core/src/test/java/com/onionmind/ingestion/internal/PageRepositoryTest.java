@@ -83,6 +83,59 @@ class PageRepositoryTest {
     }
 
     @Test
+    void upsertOutcomeReportsGeneratedIdAndFirstVersionAsNew() {
+        String url = "http://outcome-new-" + System.nanoTime() + ".onion";
+
+        UpsertOutcome outcome = repository.upsertWithVersioning(doc(url, "brand new content"), null);
+
+        assertThat(outcome.pageId()).isNotNull();
+        assertThat(outcome.version()).isEqualTo(1);
+        assertThat(outcome.isNewVersion()).isTrue();
+    }
+
+    @Test
+    void upsertOutcomeReportsUnchangedWhenContentIsIdentical() {
+        String url = "http://outcome-same-" + System.nanoTime() + ".onion";
+        UpsertOutcome first = repository.upsertWithVersioning(doc(url, "stable content"), null);
+
+        UpsertOutcome second = repository.upsertWithVersioning(doc(url, "stable content"), null);
+
+        assertThat(second.pageId()).isEqualTo(first.pageId());
+        assertThat(second.version()).isEqualTo(1);
+        assertThat(second.isNewVersion()).isFalse();
+    }
+
+    @Test
+    void upsertOutcomeReportsNewVersionWhenContentChanges() {
+        String url = "http://outcome-changed-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "version one"), null);
+
+        UpsertOutcome outcome = repository.upsertWithVersioning(doc(url, "version two, different"), null);
+
+        assertThat(outcome.version()).isEqualTo(2);
+        assertThat(outcome.isNewVersion()).isTrue();
+    }
+
+    @Test
+    void findExtractedTextReturnsCurrentTextOnlyWhenPageExists() {
+        String url = "http://lookup-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "text to look up"));
+
+        assertThat(repository.findExtractedText(url)).contains("text to look up");
+        assertThat(repository.findExtractedText("http://never-seen-" + System.nanoTime() + ".onion")).isEmpty();
+    }
+
+    @Test
+    void findPreviousVersionExtractedTextReturnsArchivedTextOnly() {
+        String url = "http://prev-version-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "version one text"));
+        repository.upsertWithVersioning(doc(url, "version two text, changed"));
+
+        assertThat(repository.findPreviousVersionExtractedText(url, 2)).contains("version one text");
+        assertThat(repository.findPreviousVersionExtractedText(url, 1)).isEmpty(); // no version 0 archived
+    }
+
+    @Test
     void newPageWithoutEmbeddingOutcomeStaysAtDefaultPendingStatus() {
         String url = "http://no-embedding-" + System.nanoTime() + ".onion";
 

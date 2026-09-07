@@ -4,6 +4,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 /**
  * Fase 2 wiring: embeddings only, no generation. Active when {@code embedding.enabled=true}
  * and {@code ai.enabled} is not on — once {@code ai.enabled=true}, DefaultAIOrchestrator
@@ -38,6 +40,16 @@ public class OllamaAIOrchestrator implements AIOrchestrator {
     @Override
     public LanguageDetection detectLanguage(String text, TaskContext ctx) {
         throw new UnsupportedOperationException("Detecção de idioma chega na Fase 3 — ligue ai.enabled");
+    }
+
+    @Override
+    public List<Entity> extractEntities(String text, TaskContext ctx) {
+        throw new UnsupportedOperationException("Extração de entidades chega na Fase 4 — ligue ai.enabled");
+    }
+
+    @Override
+    public Summary summarizeDiff(String previousText, String currentText, TaskContext ctx) {
+        throw new UnsupportedOperationException("Resumo de mudança chega na Fase 4 — ligue ai.enabled");
     }
 
     @Override

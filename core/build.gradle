@@ -40,6 +40,7 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-kafka'
 	implementation 'org.flywaydb:flyway-database-postgresql'
 	implementation 'org.springframework.modulith:spring-modulith-events-api'
+	implementation 'org.springframework.modulith:spring-modulith-events-core' // EventPublicationRegistry (housekeeping, Phase 4)
 	implementation 'org.springframework.modulith:spring-modulith-observability-api'
 	implementation 'org.springframework.modulith:spring-modulith-starter-core'
 	implementation 'org.springframework.modulith:spring-modulith-starter-jdbc'
@@ -47,6 +48,7 @@ dependencies {
 	implementation 'org.jsoup:jsoup:1.18.1'
 	implementation 'com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer:20240325.1'
 	implementation 'com.google.guava:guava:33.3.1-jre'
+	implementation 'org.neo4j.driver:neo4j-java-driver' // Phase 4: knowledge graph (master-sdd sec. 10)
 	runtimeOnly 'org.postgresql:postgresql'
 	runtimeOnly 'org.springframework.modulith:spring-modulith-actuator'
 	runtimeOnly 'org.springframework.modulith:spring-modulith-events-kafka'
@@ -64,6 +66,8 @@ dependencies {
 	testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
 	testImplementation 'org.testcontainers:testcontainers-kafka'
 	testImplementation 'org.testcontainers:testcontainers-postgresql'
+	// Phase 4 Neo4j integration tests use a plain GenericContainer (org.testcontainers:neo4j has
+	// no Testcontainers-2.x release yet — same reasoning as RedisTestSupport's GenericContainer).
 	testImplementation 'com.h2database:h2'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }

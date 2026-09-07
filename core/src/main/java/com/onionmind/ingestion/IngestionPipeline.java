@@ -7,8 +7,10 @@ import com.onionmind.content.EmbeddingOutcome;
 import com.onionmind.content.EmbeddingProcessor;
 import com.onionmind.content.ProcessingResult;
 import com.onionmind.ingestion.internal.PageRepository;
+import com.onionmind.ingestion.internal.UpsertOutcome;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,12 +22,15 @@ public class IngestionPipeline {
     private static final Logger log = LoggerFactory.getLogger(IngestionPipeline.class);
     private final List<ContentProcessor> processors;
     private final PageRepository repository;
+    private final ApplicationEventPublisher events;
 
-    public IngestionPipeline(List<ContentProcessor> processors, PageRepository repository) {
+    public IngestionPipeline(List<ContentProcessor> processors, PageRepository repository,
+                              ApplicationEventPublisher events) {
         this.processors = processors.stream()
             .sorted(Comparator.comparingInt(ContentProcessor::order))
             .toList();
         this.repository = repository;
+        this.events = events;
     }
 
     @Transactional
@@ -70,7 +75,7 @@ public class IngestionPipeline {
             return;
         }
 
-        repository.upsertWithVersioning(doc, embeddingOutcome);
+        UpsertOutcome upsert = repository.upsertWithVersioning(doc, embeddingOutcome);
 
         if (sawAi && !aiUnchanged) {
             AiOutcome outcome = aiFailed
@@ -78,5 +83,9 @@ public class IngestionPipeline {
                 : AiOutcome.processed(doc.enrichment());
             repository.updateAiFields(doc.url(), outcome);
         }
+
+        // ADR-009: ingestion never knows who reacts — graph/intelligence (Phase 4) do.
+        events.publishEvent(new PageIndexedEvent(
+            upsert.pageId(), doc.url(), doc.resolvedContentHash(), upsert.version(), upsert.isNewVersion()));
     }
 }

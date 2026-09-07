@@ -3,6 +3,7 @@ package dedup
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -28,6 +29,21 @@ func TestSeenRecently(t *testing.T) {
 
 	if !d.SeenRecently(url) {
 		t.Fatalf("marked URL should be seen recently")
+	}
+}
+
+func TestMarkOversized_RecordsURLAndSizeQueryably(t *testing.T) {
+	d := newTestDedup(t, time.Minute)
+	url := fmt.Sprintf("http://big-%d.onion/", time.Now().UnixNano())
+
+	d.MarkOversized(url, 1987020)
+
+	val, err := d.client.Get(context.Background(), "skipped:oversized:"+hashURL(url)).Result()
+	if err != nil {
+		t.Fatalf("expected oversized marker to be queryable, got error: %v", err)
+	}
+	if !strings.Contains(val, url) || !strings.Contains(val, "1987020") {
+		t.Errorf("marker value = %q, want it to contain url and size", val)
 	}
 }
 

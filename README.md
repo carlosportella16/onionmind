@@ -72,7 +72,7 @@ Most Tor search engines are link lists without ranking or context. OnionMind cha
 ### Phase 1 Details
 
 Ships a functional Tor search engine without AI:
-- **Crawler:** TorConnector discovers URLs via Tor, avoids traps, deduplicates with Redis
+- **Crawler:** TorConnector discovers URLs via Tor, avoids traps, deduplicates with Redis. A page too large to publish is recorded (not just logged) at `skipped:oversized:<sha1(url)>` — `redis-cli --scan --pattern 'skipped:oversized:*'` lists them, each value is `url|size_bytes|timestamp`
 - **Sanitization:** HTML cleaned before any persistence (OWASP allowlist)
 - **Indexing:** PostgreSQL `tsvector` GENERATED column + GIN index, `ts_rank` for relevance
 - **REST API:** GET `/api/search?q=term` returns ranked pages

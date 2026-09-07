@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/IBM/sarama"
+
 	"github.com/carlosportella16/onionmind/crawler/internal/connector"
 	"github.com/carlosportella16/onionmind/crawler/internal/frontier"
 )
@@ -25,11 +27,12 @@ func (f *fakeConnector) Fetch(ctx context.Context, url string) (*connector.RawPa
 }
 
 type fakeDedup struct {
-	mu   sync.Mutex
-	seen map[string]bool
+	mu        sync.Mutex
+	seen      map[string]bool
+	oversized map[string]int
 }
 
-func newFakeDedup() *fakeDedup { return &fakeDedup{seen: map[string]bool{}} }
+func newFakeDedup() *fakeDedup { return &fakeDedup{seen: map[string]bool{}, oversized: map[string]int{}} }
 
 func (d *fakeDedup) SeenRecently(url string) bool {
 	d.mu.Lock()
@@ -40,6 +43,17 @@ func (d *fakeDedup) MarkSeen(url string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.seen[url] = true
+}
+func (d *fakeDedup) MarkOversized(url string, sizeBytes int) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.oversized[url] = sizeBytes
+}
+func (d *fakeDedup) wasMarkedOversized(url string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, ok := d.oversized[url]
+	return ok
 }
 
 type fakePublisher struct {
@@ -138,6 +152,42 @@ func TestPool_FetchErrorSkipsPublish(t *testing.T) {
 
 	if pub.count() != 0 {
 		t.Fatalf("expected no publish on fetch error, got %d", pub.count())
+	}
+}
+
+func TestPool_MarksOversizedOnSizeError(t *testing.T) {
+	page := &connector.RawPage{URL: "http://big.onion/", HTML: []byte("big page content")}
+	conn := &fakeConnector{page: page}
+	d := newFakeDedup()
+	pub := &fakePublisher{err: sarama.ErrMessageSizeTooLarge}
+	f := newFakeFrontier(frontier.URLJob{URL: "http://big.onion/", Depth: 0})
+
+	pool := New(1, conn, d, pub, f, 0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	pool.Run(ctx)
+
+	if !d.wasMarkedOversized("http://big.onion/") {
+		t.Errorf("expected URL to be marked oversized after a size-too-large publish error")
+	}
+}
+
+func TestPool_DoesNotMarkOversizedOnOtherPublishErrors(t *testing.T) {
+	page := &connector.RawPage{URL: "http://x.onion/", HTML: []byte("x")}
+	conn := &fakeConnector{page: page}
+	d := newFakeDedup()
+	pub := &fakePublisher{err: errors.New("network blip")}
+	f := newFakeFrontier(frontier.URLJob{URL: "http://x.onion/", Depth: 0})
+
+	pool := New(1, conn, d, pub, f, 0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	pool.Run(ctx)
+
+	if d.wasMarkedOversized("http://x.onion/") {
+		t.Errorf("expected a non-size publish error not to be marked oversized")
 	}
 }
 

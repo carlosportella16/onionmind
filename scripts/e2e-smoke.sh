@@ -14,7 +14,7 @@ export SMOKE_BASE_URL="http://localhost:8081"
 
 cleanup() {
   local status=$?
-  if [ "$status" -ne 0 ]; then
+  if [[ "$status" -ne 0 ]]; then
     echo "==> e2e falhou (exit $status) — logs:"
     for svc in crawler core fakes; do
       echo "----- $svc -----"
@@ -46,7 +46,7 @@ SMOKE_TAGS='@e2e' "${GRADLE[@]}" smokeTest
 echo "==> Parando o crawler — tem que sair com código 0 (SIGTERM tratado)..."
 "${COMPOSE[@]}" stop crawler
 exit_code=$(docker inspect -f '{{.State.ExitCode}}' "$("${COMPOSE[@]}" ps -aq crawler)")
-[ "$exit_code" = "0" ] || { echo "crawler saiu com código $exit_code, esperado 0"; exit 1; }
+[[ "$exit_code" = "0" ]] || { echo "crawler saiu com código $exit_code, esperado 0"; exit 1; }
 
 # Crawler já parado: @somente-leitura não pode ver a stats mudando no meio da execução.
 echo "==> Smoke completo (@smoke, incluindo @semantic e @ia)..."

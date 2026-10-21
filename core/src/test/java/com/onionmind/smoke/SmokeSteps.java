@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /** Plain HTTP glue: deliberately no Spring, so cucumber-spring never boots a context here. */
 public class SmokeSteps {
 
-    private static final String BASE_URL = baseUrl();
+    static final String BASE_URL = baseUrl();
 
     private HttpJson response;
     private HttpJson statsBefore;

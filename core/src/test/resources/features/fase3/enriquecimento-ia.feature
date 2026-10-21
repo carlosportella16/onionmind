@@ -1,0 +1,53 @@
+# language: pt
+Funcionalidade: Fase 3 — enriquecimento por IA
+  Páginas novas ganham resumo, categoria, idioma e (se não forem em português)
+  tradução, com o provedor de IA escolhido automaticamente. Conteúdo barrado
+  vai para quarentena antes de qualquer modelo tocá-lo.
+
+  Cenário: Página nova em português é enriquecida
+    Dado que a página "http://forum-pt.onion/" foi publicada com o texto "Este fórum em português discute a privacidade e a troca de bens digitais entre os usuários que não revelam a identidade para mais ninguém."
+    Quando o ciclo de enriquecimento roda
+    Então a página "http://forum-pt.onion/" está com status de IA "processed"
+    E a página "http://forum-pt.onion/" tem resumo, categoria e idioma preenchidos
+    E o idioma da página "http://forum-pt.onion/" é "pt"
+    E a página "http://forum-pt.onion/" não tem tradução
+
+  Cenário: Página em inglês é traduzida sem perder o original
+    Dado que a página "http://forum-en.onion/" foi publicada com o texto "This English forum discusses the anonymous trading of digital goods and the privacy tools that people use on the network every day."
+    Quando o ciclo de enriquecimento roda
+    Então a página "http://forum-en.onion/" está com status de IA "processed"
+    E o idioma da página "http://forum-en.onion/" é "en"
+    E a página "http://forum-en.onion/" tem tradução preenchida
+    E o texto original da página "http://forum-en.onion/" continua contendo "This English forum"
+
+  Cenário: Categoria fora da taxonomia não é persistida
+    Dado que o modelo de IA responde a categoria "receitas culinárias"
+    E que a página "http://forum-pt.onion/" foi publicada com o texto "Este fórum em português discute a privacidade e a troca de bens digitais entre os usuários que não revelam a identidade para mais ninguém."
+    Quando o ciclo de enriquecimento roda
+    Então a categoria da página "http://forum-pt.onion/" pertence à taxonomia
+    E a categoria da página "http://forum-pt.onion/" não é "receitas culinárias"
+
+  Cenário: Host na denylist vai para quarentena
+    Quando a página "http://proibido-aceitacao.onion/catalogo" é publicada com o texto "Conteúdo de um host que está na lista de bloqueio auditada do projeto."
+    Então a página "http://proibido-aceitacao.onion/catalogo" está em quarentena sem texto nem HTML
+    E a página "http://proibido-aceitacao.onion/catalogo" está com status de IA "quarantined"
+
+  Cenário: Provedor preferido sem cota não interrompe o enriquecimento
+    Dado que o provedor "groq" está sem cota no minuto corrente
+    E que a página "http://artigo-longo.onion/" foi publicada com um texto longo em português
+    Quando o ciclo de enriquecimento roda
+    Então a página "http://artigo-longo.onion/" está com status de IA "processed"
+    E o provedor "groq" não recebeu chamadas de geração
+    E o provedor "gemini" recebeu chamadas de geração
+
+  Cenário: Busca expõe o enriquecimento
+    Dado que a página "http://forum-pt.onion/" foi publicada com o texto "Este fórum em português discute o xilofonista e a privacidade entre os usuários que não revelam a identidade para ninguém."
+    E que o ciclo de enriquecimento rodou
+    Quando eu busco por "xilofonista"
+    Então o resultado da página "http://forum-pt.onion/" traz resumo e categoria
+
+  Cenário: Página ainda pendente é retornada sem erro
+    Dado que a página "http://forum-pt.onion/" foi publicada com o texto "Este fórum em português discute o xilofonista e a privacidade entre os usuários que não revelam a identidade para ninguém."
+    Quando eu busco por "xilofonista"
+    Então a resposta tem status 200
+    E o resultado da página "http://forum-pt.onion/" vem sem resumo nem categoria

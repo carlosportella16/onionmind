@@ -16,6 +16,7 @@ import static io.cucumber.junit.platform.engine.Constants.PLUGIN_PROPERTY_NAME;
 @Suite
 @IncludeEngines("cucumber")
 @SelectClasspathResource("features/fase1")
+@SelectClasspathResource("features/fase2")
 @ConfigurationParameter(key = GLUE_PROPERTY_NAME, value = "com.onionmind.acceptance")
 @ConfigurationParameter(key = PLUGIN_PROPERTY_NAME, value = "summary")
 class AcceptanceSuite {

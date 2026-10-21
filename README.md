@@ -211,6 +211,47 @@ cd crawler
 make test-coverage
 ```
 
+### Acceptance (Cucumber) and Smoke Tests
+
+**Acceptance suite** — `core/src/test/resources/features/fase{1,2,3}/*.feature`, Gherkin in Portuguese, one file per phase:
+
+- Fase 1 covers ingestion, versioning, sanitization, stats and full-text search.
+- Fase 2 covers concept search, the `min-score` floor, one page not crowding out the others, and hybrid fusion.
+- Fase 3 covers enrichment, translation, the taxonomy, quarantine and quota fallback.
+
+It runs inside the normal `./gradlew test` through `AcceptanceSuite`, so it is part of CI and of the coverage gate.
+
+What is real vs. fake:
+
+| Real (Testcontainers / in-process) | Fake |
+|---|---|
+| Postgres, Kafka (`raw-pages`), Redis (quota + cache), Qdrant, pipeline, `CostOptimizerRouter`, `ProviderQuotaTracker`, decorators, Ollama/Groq/Gemini HTTP adapters | The model endpoints only: three local HTTP stubs answer generation deterministically and return bag-of-concepts embeddings (`FakeAiProviders`) |
+
+No API keys, Tor or local models are needed.
+
+```bash
+cd core
+./gradlew test --tests '*AcceptanceSuite*'   # only the Cucumber scenarios
+```
+
+**Smoke tests** — `features/smoke/smoke.feature`, tagged `@smoke`.
+
+- They send GET requests only against an already running instance and write nothing, so they are safe against shared environments.
+- They are excluded from `./gradlew test` and are not part of CI.
+
+```bash
+./scripts/smoke.sh                                         # http://localhost:8081, every @smoke scenario
+SMOKE_BASE_URL=https://host ./scripts/smoke.sh             # another instance
+SMOKE_TAGS='@smoke and not @semantic' ./scripts/smoke.sh   # instance with embedding.enabled=false
+SMOKE_TAGS='@smoke and not @ia' ./scripts/smoke.sh         # instance with ai.enabled=false
+```
+
+Tags:
+
+- `@semantic` — `/api/search/semantic` (503 when embeddings are off).
+- `@ia` — AI metrics in `/actuator/prometheus`.
+- `@somente-leitura` — checks that `/api/stats` is unchanged by the run. Exclude it if a crawler is ingesting into the same instance at the same time.
+
 ### Code Quality
 
 - **SonarCloud:** Free tier analysis integrated in CI

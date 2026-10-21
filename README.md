@@ -237,7 +237,7 @@ cd core
 **Smoke tests** — `features/smoke/smoke.feature`, tagged `@smoke`.
 
 - They send GET requests only against an already running instance and write nothing, so they are safe against shared environments.
-- They are excluded from `./gradlew test` and are not part of CI.
+- They are excluded from `./gradlew test`. In CI, the `smoke` job (after `ci-java`) boots the core against real Postgres, Kafka and Redis and runs them with `SMOKE_TAGS='@smoke and not @semantic'` (there is no Ollama or Qdrant on the runner).
 
 ```bash
 ./scripts/smoke.sh                                         # http://localhost:8081, every @smoke scenario

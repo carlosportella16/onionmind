@@ -265,25 +265,36 @@ func (w *world) assertOversizedRecord(url string) error {
 	ctx := context.Background()
 	deadline := time.Now().Add(publishWait)
 	for time.Now().Before(deadline) {
-		keys, err := w.redis.Keys(ctx, "skipped:oversized:*").Result()
-		if err != nil {
+		found, err := w.hasOversizedRecord(ctx, url)
+		if err != nil || found {
 			return err
-		}
-		for _, k := range keys {
-			v, err := w.redis.Get(ctx, k).Result()
-			if err != nil {
-				continue
-			}
-			parts := strings.Split(v, "|")
-			if len(parts) >= 2 && parts[0] == url {
-				if size, _ := strconv.Atoi(parts[1]); size > 0 {
-					return nil
-				}
-			}
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	return fmt.Errorf("no skipped:oversized record for %s", url)
+}
+
+// hasOversizedRecord reports whether some skipped:oversized value ("url|size|time") names
+// url with a positive size.
+func (w *world) hasOversizedRecord(ctx context.Context, url string) (bool, error) {
+	keys, err := w.redis.Keys(ctx, "skipped:oversized:*").Result()
+	if err != nil {
+		return false, err
+	}
+	for _, k := range keys {
+		v, err := w.redis.Get(ctx, k).Result()
+		if err != nil {
+			continue
+		}
+		parts := strings.Split(v, "|")
+		if len(parts) < 2 || parts[0] != url {
+			continue
+		}
+		if size, _ := strconv.Atoi(parts[1]); size > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (w *world) cancelCrawler() error {

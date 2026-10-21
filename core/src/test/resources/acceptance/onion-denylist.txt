@@ -1,0 +1,2 @@
+# Hosts barrados nos cenários de aceitação (features/fase3).
+proibido-aceitacao.onion

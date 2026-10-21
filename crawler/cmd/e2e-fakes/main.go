@@ -6,36 +6,40 @@ package main
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/carlosportella16/onionmind/crawler/internal/testfakes"
 )
 
-// The e2e site graph: the seed links every other page. Terms here are what
-// core/src/test/resources/features/smoke/e2e.feature searches for — change both together.
+// The e2e site graph, keyed by host (each serves "/"): the seed links every other page.
+// Terms here are what core/src/test/resources/features/smoke/e2e.feature searches for —
+// change both together.
 var pages = map[string]string{
-	"http://semente-e2e.onion/": `<html><body>
+	"semente-e2e.onion": `<html><body>
 <p>Portal semente do teste ponta a ponta, onde o xilofonista mantém a lista de sites da rede para todos os visitantes.</p>
 <a href="http://linkada-e2e.onion/">linkada</a>
 <a href="http://conceito-e2e.onion/">conceito</a>
 <a href="http://proibido-e2e.onion/">proibido</a>
 </body></html>`,
-	"http://linkada-e2e.onion/": `<html><body>
+	"linkada-e2e.onion": `<html><body>
 <p>Página descoberta por link, que fala do quetzal e da comunidade que mantém o portal desde o início.</p>
 </body></html>`,
-	"http://conceito-e2e.onion/": `<html><body>
+	"conceito-e2e.onion": `<html><body>
 <p>Mercado aceita moeda digital anônima e registra tudo num blockchain descentralizado para os compradores da rede.</p>
 </body></html>`,
 	// Host listed in e2e/denylist.txt: the core must quarantine it, never index it.
-	"http://proibido-e2e.onion/": `<html><body>
+	"proibido-e2e.onion": `<html><body>
 <p>Conteúdo de um host na lista de bloqueio, com o termo zircônio que nunca deve aparecer na busca do core.</p>
 </body></html>`,
 }
 
 func main() {
 	sites := testfakes.NewOnionSites()
-	for url, html := range pages {
-		sites.Set(url, testfakes.Page{HTML: html})
+	for host, html := range pages {
+		// .onion services are plain http: Tor, not TLS, encrypts the hop.
+		page := url.URL{Scheme: "http", Host: host, Path: "/"}
+		sites.Set(page.String(), testfakes.Page{HTML: html})
 	}
 
 	go serve(":8080", sites)

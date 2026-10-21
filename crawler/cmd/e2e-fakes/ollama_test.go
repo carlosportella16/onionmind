@@ -20,7 +20,7 @@ func cosine(a, b []float64) float64 {
 func TestEmbedSeparatesConceptsAroundTheCoreMinScore(t *testing.T) {
 	const minScore = 0.45 // core application.yml embedding.min-score
 	query := embed("criptomoedas")
-	page := embed(pages["http://conceito-e2e.onion/"])
+	page := embed(pages["conceito-e2e.onion"])
 
 	if got := cosine(query, page); got <= minScore {
 		t.Errorf("paraphrase should clear min-score, got %.3f", got)

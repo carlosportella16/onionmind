@@ -2,6 +2,7 @@ package testfakes
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 )
@@ -48,10 +49,11 @@ func (o *OnionSites) Reset() {
 }
 
 func (o *OnionSites) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	url := "http://" + r.Host + r.URL.Path
+	// .onion services are plain http: Tor, not TLS, encrypts the hop.
+	key := (&url.URL{Scheme: "http", Host: r.Host, Path: r.URL.Path}).String()
 	o.mu.Lock()
-	o.hits[url]++
-	page, ok := o.pages[url]
+	o.hits[key]++
+	page, ok := o.pages[key]
 	o.mu.Unlock()
 
 	if !ok {

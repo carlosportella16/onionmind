@@ -65,6 +65,11 @@ dependencies {
 	testImplementation 'org.testcontainers:testcontainers-kafka'
 	testImplementation 'org.testcontainers:testcontainers-postgresql'
 	testImplementation 'com.h2database:h2'
+	testImplementation platform('io.cucumber:cucumber-bom:8.0.4')
+	testImplementation 'io.cucumber:cucumber-java'
+	testImplementation 'io.cucumber:cucumber-spring'
+	testImplementation 'io.cucumber:cucumber-junit-platform-engine'
+	testImplementation 'org.junit.platform:junit-platform-suite'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

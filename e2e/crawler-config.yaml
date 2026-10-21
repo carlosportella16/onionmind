@@ -1,0 +1,27 @@
+# Crawler config for the e2e stack: the fake Tor (e2e-fakes) instead of the tor service,
+# and a single seed whose site links every other e2e page.
+crawler:
+  workers: 2
+  fetch_timeout: 10s
+  max_page_size_mb: 10
+  politeness_delay: 0s
+  circuit_breaker:
+    consecutive_failures: 3
+    timeout: 30s
+
+tor:
+  socks_addr: "fakes:1080"
+
+redis:
+  addr: "redis:6379"
+  dedup_ttl: 6h
+
+redpanda:
+  brokers: ["redpanda:9092"]
+  topic: "raw-pages"
+
+frontier:
+  seeds:
+    - "http://semente-e2e.onion/"
+  max_depth: 2
+  max_queue_size: 1000

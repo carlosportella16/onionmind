@@ -1,0 +1,14 @@
+# Built with crawler/ as context (see docker-compose.e2e.yml): the fakes reuse
+# crawler/internal/testfakes, so they live in the crawler Go module.
+FROM golang:1.27-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -o /e2e-fakes ./cmd/e2e-fakes
+
+# alpine (not distroless) so the compose healthcheck has `nc`.
+FROM alpine:3.20
+COPY --from=build /e2e-fakes /e2e-fakes
+USER nobody
+ENTRYPOINT ["/e2e-fakes"]

@@ -1,0 +1,2 @@
+# Core illegal-content denylist for the e2e stack (illegal-content.url-denylist-path).
+proibido-e2e.onion

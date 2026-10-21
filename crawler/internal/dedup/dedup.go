@@ -2,7 +2,7 @@ package dedup
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"time"
@@ -51,6 +51,6 @@ func (d *Dedup) MarkOversized(url string, sizeBytes int) {
 }
 
 func hashURL(url string) string {
-	sum := sha1.Sum([]byte(url))
+	sum := sha256.Sum256([]byte(url))
 	return hex.EncodeToString(sum[:])
 }

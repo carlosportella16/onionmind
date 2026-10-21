@@ -252,6 +252,59 @@ Tags:
 - `@ia` — AI metrics in `/actuator/prometheus`.
 - `@somente-leitura` — checks that `/api/stats` is unchanged by the run. Exclude it if a crawler is ingesting into the same instance at the same time.
 
+### Crawler Acceptance Tests (godog)
+
+`crawler/features/*.feature` are Gherkin scenarios in Portuguese, run by [godog](https://github.com/cucumber/godog) through `go test`. They are behind the `acceptance` build tag, so a plain `go test ./...` still needs no Docker.
+
+The scenarios drive the real wiring (`internal/app.Run`) against real Redis and Redpanda containers (testcontainers-go). The Tor network is replaced by `internal/testfakes`: a SOCKS5 proxy that resolves `.onion` names itself, as Tor does with socks5h, plus the fake `.onion` sites behind it.
+
+They cover:
+
+- publishing in the core's JSON contract;
+- following links up to `max_depth` while ignoring clearnet links;
+- dedup by normalized URL;
+- failing open when Redis is down;
+- recording oversized pages;
+- isolating hosts that fail;
+- shutting down cleanly.
+
+```bash
+cd crawler
+go test -tags acceptance -run TestFeatures -v .    # only the scenarios (~25 s)
+go test -tags acceptance -coverpkg=./... ./...     # what CI runs
+```
+
+### End-to-End Smoke (all phases)
+
+```
+crawler image ──SOCKS5──▶ e2e-fakes (fake Tor + .onion sites)
+      │
+      ▼ raw-pages
+  Redpanda ──▶ core ──▶ Postgres (Fase 1)
+                 ├────▶ Qdrant + fake Ollama embeddings (Fase 2)
+                 └────▶ fake Ollama generation, denylist quarantine (Fase 3)
+                 ▲
+     @e2e + @smoke Cucumber scenarios (GET only)
+```
+
+```bash
+./scripts/e2e-smoke.sh   # needs Docker and a free port 8081; ~30 s with warm caches
+```
+
+The script runs these steps:
+
+1. Builds the core jar.
+2. Starts `e2e/docker-compose.e2e.yml`, which includes the **real crawler image** and `crawler/cmd/e2e-fakes` (Tor, the `.onion` sites and Ollama).
+3. Runs the `@e2e` scenarios. They check that the seed and the linked page are searchable, that semantic search finds a page by concept, that results carry a summary and category, and that the denylisted host is not indexed.
+4. Checks that the crawler container exits with code 0 on `SIGTERM`.
+5. Runs every `@smoke` scenario, `@semantic` and `@ia` included.
+
+The stack is always torn down at the end. On failure, the script prints the crawler, core and fakes logs first.
+
+Nothing reaches Tor or an AI provider. Real-provider validation stays in `scripts/validate-phase3.sh`.
+
+In CI, `ci-go.yml` runs the godog suite (with Redis as a service, so the `dedup` unit tests no longer skip), and `e2e.yml` runs `scripts/e2e-smoke.sh` on every PR.
+
 ### Code Quality
 
 - **SonarCloud:** Free tier analysis integrated in CI

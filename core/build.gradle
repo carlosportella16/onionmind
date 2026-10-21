@@ -81,6 +81,25 @@ dependencyManagement {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// Smoke needs an already running instance — see the smokeTest task.
+	exclude '**/SmokeSuite*'
+}
+
+// GET-only smoke against a running instance: SMOKE_BASE_URL (default http://localhost:8081),
+// optional SMOKE_TAGS to narrow it, e.g. '@smoke and not @semantic'.
+tasks.register('smokeTest', Test) {
+	description = 'Runs the @smoke Cucumber scenarios against SMOKE_BASE_URL.'
+	group = 'verification'
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform()
+	include '**/SmokeSuite*'
+	systemProperty 'cucumber.filter.tags', System.getenv('SMOKE_TAGS') ?: '@smoke'
+	outputs.upToDateWhen { false }
+	testLogging {
+		events 'failed'
+		exceptionFormat 'full'
+	}
 }
 
 jacoco {

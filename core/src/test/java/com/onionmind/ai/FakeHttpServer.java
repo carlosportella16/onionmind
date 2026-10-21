@@ -8,6 +8,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.BiFunction;
 
 /**
  * Minimal JDK HttpServer stub for provider adapter tests — same approach as the existing
@@ -15,9 +16,14 @@ import java.util.concurrent.CopyOnWriteArrayList;
  */
 public final class FakeHttpServer implements AutoCloseable {
 
+    public record Reply(int status, String body) {
+    }
+
     private final HttpServer server;
     public volatile int status = 200;
     public volatile String responseBody = "{}";
+    /** When set, answers each request from {@code (path, requestBody)} instead of status/responseBody. */
+    public volatile BiFunction<String, String, Reply> responder;
     public final List<String> requestBodies = new CopyOnWriteArrayList<>();
     public final List<String> requestPaths = new CopyOnWriteArrayList<>();
     public final List<String> authHeaders = new CopyOnWriteArrayList<>();
@@ -29,14 +35,18 @@ public final class FakeHttpServer implements AutoCloseable {
             throw new IllegalStateException(e);
         }
         server.createContext("/", exchange -> {
-            requestPaths.add(exchange.getRequestURI().getPath());
-            requestBodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            String path = exchange.getRequestURI().getPath();
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            requestPaths.add(path);
+            requestBodies.add(body);
             String auth = exchange.getRequestHeaders().getFirst("Authorization");
             authHeaders.add(auth != null ? auth : exchange.getRequestHeaders().getFirst("x-goog-api-key"));
 
-            byte[] out = responseBody.getBytes(StandardCharsets.UTF_8);
+            var current = responder;
+            Reply reply = current != null ? current.apply(path, body) : new Reply(status, responseBody);
+            byte[] out = reply.body().getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
-            exchange.sendResponseHeaders(status, out.length);
+            exchange.sendResponseHeaders(reply.status(), out.length);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(out);
             }

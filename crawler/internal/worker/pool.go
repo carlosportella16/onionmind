@@ -9,6 +9,7 @@ import (
 	"github.com/carlosportella16/onionmind/crawler/internal/connector"
 	"github.com/carlosportella16/onionmind/crawler/internal/frontier"
 	"github.com/carlosportella16/onionmind/crawler/internal/normalizer"
+	"github.com/carlosportella16/onionmind/crawler/internal/publisher"
 )
 
 // Deduper and Publisher describe the subset of *dedup.Dedup and
@@ -17,6 +18,7 @@ import (
 type Deduper interface {
 	SeenRecently(canonicalURL string) bool
 	MarkSeen(canonicalURL string)
+	MarkOversized(url string, sizeBytes int)
 }
 
 type Publisher interface {
@@ -79,6 +81,9 @@ func (p *Pool) work(ctx context.Context, id int) {
 
 			if err := p.pub.PublishRawPage(page); err != nil {
 				slog.Error("publish failed", "worker", id, "url", job.URL, "err", err)
+				if publisher.IsMessageSizeError(err) {
+					p.dedup.MarkOversized(job.URL, len(page.HTML))
+				}
 				continue
 			}
 

@@ -25,6 +25,7 @@ class TaskContextTest {
                 TaskContext.TaskType.SUMMARIZE,
                 TaskContext.TaskType.CLASSIFY,
                 TaskContext.TaskType.TRANSLATE,
+                TaskContext.TaskType.DETECT_LANGUAGE,
                 TaskContext.TaskType.EXTRACT_ENTITIES,
                 TaskContext.TaskType.EMBED
         );

@@ -43,4 +43,13 @@ class ProcessingResultTest {
         assertThat(result.status()).isEqualTo(ProcessingResult.Status.FAILED);
         assertThat(result.error()).isEqualTo("parse error");
     }
+
+    @Test
+    void haltHasHaltStatusAndReason() {
+        ProcessingResult result = ProcessingResult.halt(doc, "url-denylist");
+
+        assertThat(result.document()).isEqualTo(doc);
+        assertThat(result.status()).isEqualTo(ProcessingResult.Status.HALT);
+        assertThat(result.error()).isEqualTo("url-denylist");
+    }
 }

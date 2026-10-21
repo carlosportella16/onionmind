@@ -23,4 +23,22 @@ class NoOpAIOrchestratorTest {
         assertThatThrownBy(() -> orchestrator.embed("text", context()))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
+
+    @Test
+    void classifyThrowsUnsupportedOperationException() {
+        assertThatThrownBy(() -> orchestrator.classify("text", context()))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void translateThrowsUnsupportedOperationException() {
+        assertThatThrownBy(() -> orchestrator.translate("text", "pt", context()))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void detectLanguageThrowsUnsupportedOperationException() {
+        assertThatThrownBy(() -> orchestrator.detectLanguage("text", context()))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 }

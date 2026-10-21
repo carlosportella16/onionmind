@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class HybridRankerTest {
 
     private SearchResult result(String url, double rank) {
-        return new SearchResult(1L, url, "tor", "snippet", rank, 1, Instant.now(), Instant.now());
+        return new SearchResult(1L, url, "tor", "snippet", rank, 1, Instant.now(), Instant.now(), null, null);
     }
 
     @Test

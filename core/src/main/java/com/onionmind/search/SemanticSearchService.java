@@ -2,6 +2,8 @@ package com.onionmind.search;
 
 import com.onionmind.ai.AIOrchestrator;
 import com.onionmind.ai.TaskContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -23,7 +25,17 @@ import java.util.Optional;
 @Component
 public class SemanticSearchService {
 
+    private static final Logger log = LoggerFactory.getLogger(SemanticSearchService.class);
     private static final int SNIPPET_LENGTH = 240;
+    // Qdrant's topK is chunk-level, not page-level: a single page with more chunks than topK
+    // can occupy the entire candidate window, making every other page structurally unreachable
+    // regardless of min-score (found live — one page with 427 of 454 total chunks crowded out
+    // a genuinely relevant page at every topK up to 100). Over-fetch a wider raw candidate pool,
+    // dedupe by url, then trim to what the caller asked for.
+    // ponytail: fixed multiplier/cap, not adaptive to corpus shape — raise MAX_CANDIDATES (or
+    // move to Qdrant's group-by-payload query) if a single page's chunk count outgrows this too.
+    private static final int CANDIDATE_MULTIPLIER = 10;
+    private static final int MAX_CANDIDATES = 500;
 
     private final Optional<VectorStore> vectorStore;
     private final Optional<AIOrchestrator> aiOrchestrator;
@@ -52,7 +64,15 @@ public class SemanticSearchService {
         var ctx = new TaskContext(TaskContext.TaskType.EMBED, query.length() / 4, null, false, true, null, 0);
         float[] queryVector = aiOrchestrator.get().embed(query, ctx).vector();
 
-        List<SemanticSearchHit> hits = vectorStore.get().search(queryVector, topK);
+        int candidatePool = Math.min(topK * CANDIDATE_MULTIPLIER, MAX_CANDIDATES);
+        List<SemanticSearchHit> hits = vectorStore.get().search(queryVector, candidatePool);
+
+        // DEBUG on this logger dumps every raw cosine score — how min-score gets calibrated
+        // against a real corpus (task 1.2 of phase3-ai-generation).
+        if (log.isDebugEnabled()) {
+            hits.forEach(h -> log.debug("semantic-score q=\"{}\" score={} url={} chunk={}",
+                query, h.score(), h.url(), h.chunkIndex()));
+        }
 
         // Qdrant's k-NN always returns topK nearest points, even when nothing is actually
         // relevant (e.g. a small corpus) — drop anything below the relevance floor.
@@ -66,7 +86,7 @@ public class SemanticSearchService {
             return List.of();
         }
 
-        return hydrate(bestScoreByUrl);
+        return hydrate(bestScoreByUrl).stream().limit(topK).toList();
     }
 
     private List<SearchResult> hydrate(Map<String, Double> scoreByUrl) {
@@ -74,7 +94,8 @@ public class SemanticSearchService {
         String placeholders = String.join(",", urls.stream().map(u -> "?").toList());
 
         List<SearchResult> rows = jdbc.query("""
-            SELECT id, url, source_type, extracted_text, version, first_seen_at, last_seen_at
+            SELECT id, url, source_type, extracted_text, version, first_seen_at, last_seen_at,
+                   summary->>'text' AS summary, category->>'category' AS category
             FROM pages
             WHERE url IN (%s)
             """.formatted(placeholders),
@@ -86,7 +107,8 @@ public class SemanticSearchService {
                     scoreByUrl.get(url),
                     rs.getInt("version"),
                     rs.getTimestamp("first_seen_at").toInstant(),
-                    rs.getTimestamp("last_seen_at").toInstant()
+                    rs.getTimestamp("last_seen_at").toInstant(),
+                    rs.getString("summary"), rs.getString("category")
                 );
             }, urls.toArray());
 

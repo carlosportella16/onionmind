@@ -100,7 +100,8 @@ public class SearchController {
                    ts_headline('simple', extracted_text, websearch_to_tsquery('simple', ?),
                                 'MaxFragments=2, MaxWords=40, MinWords=20') AS snippet,
                    ts_rank(search_vector, websearch_to_tsquery('simple', ?)) AS rank,
-                   version, first_seen_at, last_seen_at
+                   version, first_seen_at, last_seen_at,
+                   summary->>'text' AS summary, category->>'category' AS category
             FROM pages
             WHERE search_vector @@ websearch_to_tsquery('simple', ?)
             ORDER BY rank DESC
@@ -108,7 +109,8 @@ public class SearchController {
             """, (rs, rowNum) -> new SearchResult(
                 rs.getLong("id"), rs.getString("url"), rs.getString("source_type"),
                 rs.getString("snippet"), rs.getDouble("rank"), rs.getInt("version"),
-                rs.getTimestamp("first_seen_at").toInstant(), rs.getTimestamp("last_seen_at").toInstant()
+                rs.getTimestamp("first_seen_at").toInstant(), rs.getTimestamp("last_seen_at").toInstant(),
+                rs.getString("summary"), rs.getString("category")
             ), q, q, q, size, offset);
     }
 

@@ -4,7 +4,7 @@
 
 **Versão:** 2.0 (consolidada)
 **Data:** 2026-08-22
-**Status:** Fase 1 concluída (verificado 2026-08-22: crawler Go real descobre `.onion` via Tor, pipeline de ingestão sanitiza/versiona conteúdo, busca full-text + SPA funcionando; gate de saída validado — descoberta a busca em segundos, repetível, contra a rede Tor real), iniciando Fase 2
+**Status:** Fase 1 concluída e validada (2026-08-22, contra a rede Tor real). Fase 2 (busca semântica) mergeada nos PRs #5 e #6 — código completo, gate de saída ainda não re-executado contra Ollama + Qdrant ao vivo. Fase 3 (IA generativa + Cost Optimizer, branch `feat/phase-3-llm-integration`) com o código completo: `AIOrchestrator` real multi-provider, processors de enriquecimento, filtro de conteúdo ilegal, métricas Micrometer, `Fase3AiGenerationGateTest` verde com fakes — validação end-to-end contra Groq/Gemini reais pendente (ver `onionmind-fase3-sdd.md` §11.4).
 
 Este documento consolida todas as decisões de arquitetura discutidas até aqui num único arquivo autocontido, pensado para ser usado como contexto (em `.claude`, ferramentas de IA, ou onboarding humano). Os documentos anteriores (`onionmind-sdd.md`, `onionmind-fase1-sdd.md`, `onionmind-descoberta-indexacao.md`) continuam existindo com código de implementação mais granular — este arquivo é a referência de mais alto nível que os une.
 
@@ -48,6 +48,8 @@ Um pesquisador busca "criptomoedas" (Fase 1: full-text). Encontra páginas com t
 **Contexto:** na Fase 1–2 existe um produtor (crawler) e um consumidor (`ingestion`). Schema Registry resolve evolução de schema entre múltiplos produtores/consumidores independentes — problema que só existe a partir da Fase 3.
 
 **Decisão:** JSON puro nos eventos `raw-pages` até então.
+
+**Revisão na Fase 3 (implementação `phase3-ai-generation`):** a Fase 3 **não** adicionou nenhum produtor novo no tópico `raw-pages` — os processors de IA e o `AIOrchestrator` são consumidores in-JVM do mesmo evento. O problema de evolução entre múltiplos produtores independentes só aparece na Fase 6 (conectores externos: RSS, GitHub, PDF). **Avro + Schema Registry ficam adiados explicitamente até então**; a Fase 3 continua com eventos JSON.
 
 ### ADR-004 — `SourceConnector` genérico desde a Fase 1
 

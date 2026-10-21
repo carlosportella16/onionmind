@@ -1,0 +1,7 @@
+# IllegalContentGuard — text patterns (fase3-sdd sec. 7.5).
+# One Java regex per line, matched case-insensitively against the sanitized extracted
+# text. First match wins; the quarantine reason is recorded as "text-pattern:<lineNumber>".
+# Lines starting with '#' and blank lines are ignored.
+#
+# This file ships empty on purpose — the real audited pattern set is maintained outside
+# the repository and overridden at deploy time via ILLEGAL_TEXT_PATTERN_PATH.

@@ -6,28 +6,39 @@ on:
 jobs:
   ci-go:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    # dedup's unit tests talk to localhost:6379 and skip without it.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
-        with: { go-version: '1.27' }
+        with:
+          go-version: '1.27'
+          cache-dependency-path: crawler/go.sum
 
       - name: Run go vet
         working-directory: crawler
-        run: go vet ./...
+        run: go vet -tags acceptance ./...
 
+      # -tags acceptance adds the godog suite (crawler/features, real Redis/Redpanda via
+      # testcontainers, fake Tor); -coverpkg lets that root-package suite count toward
+      # the internal packages it drives.
       - name: Run tests with coverage
         working-directory: crawler
-        run: go test -coverprofile=coverage.out ./...
+        run: go test -tags acceptance -coverpkg=./... -coverprofile=coverage.out ./...
 
       - name: Check coverage threshold
         working-directory: crawler
         run: |
-          # cmd/crawler/main.go is bootstrap wiring (config -> Tor/Redis/Redpanda ->
-          # worker pool) that only exercises meaningfully against live infra; excluded
-          # from the gate the same way core/CoreApplication.class is excluded in jacoco.
-          grep -v 'cmd/crawler/main.go' coverage.out > coverage.filtered.out
+          # cmd/crawler/main.go is now only signals + os.Exit around internal/app.Run, and
+          # cmd/e2e-fakes is test infrastructure for the e2e stack; both excluded from the
+          # gate the same way core/CoreApplication.class is excluded in jacoco.
+          grep -vE 'cmd/crawler/main.go|cmd/e2e-fakes/' coverage.out > coverage.filtered.out
           COVERAGE=$(go tool cover -func=coverage.filtered.out | tail -1 | grep -oP '\d+\.\d+(?=%)')
           echo "Coverage: $COVERAGE%"
           COVERAGE_INT=$(awk "BEGIN {printf \"%.0f\", $COVERAGE}")

@@ -1,6 +1,7 @@
 package com.onionmind.content.processors;
 
 import com.onionmind.ai.AIOrchestrator;
+import com.onionmind.ai.AllProvidersExhaustedException;
 import com.onionmind.ai.TaskContext;
 import com.onionmind.content.AiEnrichmentGate;
 import com.onionmind.content.ContentProcessor;
@@ -33,15 +34,19 @@ class AiProcessorContractTest {
     private static final int CAP = 8000;
 
     private Object[] lastCall;
+    private boolean quotaOnly;
     private final AIOrchestrator failing = mock(AIOrchestrator.class, invocation -> {
         lastCall = invocation.getArguments();
-        throw new RuntimeException("all providers down");
+        throw quotaOnly
+            ? new AllProvidersExhaustedException("no AI provider with quota", true, null)
+            : new RuntimeException("all providers down");
     });
     private final AiEnrichmentGate gate = mock(AiEnrichmentGate.class);
 
     @BeforeEach
     void reset() {
         org.mockito.Mockito.reset(gate);
+        quotaOnly = false;
     }
 
     private Document doc(String text, Enrichment enrichment) {
@@ -87,6 +92,18 @@ class AiProcessorContractTest {
         ProcessingResult result = processor.process(input);
 
         assertThat(result.status()).isEqualTo(ProcessingResult.Status.FAILED);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("aiProcessors")
+    void noProviderWithQuotaIsWaitingNotFailed(String name, ContentProcessor processor, Document input) {
+        when(gate.alreadyEnriched(any())).thenReturn(false);
+        quotaOnly = true;
+
+        ProcessingResult result = processor.process(input);
+
+        assertThat(result.status()).isEqualTo(ProcessingResult.Status.WAITING);
+        assertThat(result.document()).isSameAs(input);
     }
 
     @ParameterizedTest(name = "{0}")

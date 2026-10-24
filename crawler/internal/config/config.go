@@ -1,7 +1,10 @@
 package config
 
 import (
+	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -35,7 +38,14 @@ type CrawlerConfig struct {
 	MaxPageSizeMB   int                  `yaml:"max_page_size_mb"`
 	PolitenessDelay Duration             `yaml:"politeness_delay"`
 	CircuitBreaker  CircuitBreakerConfig `yaml:"circuit_breaker"`
+	// MaxLinksPerPage caps how many distinct links one page may enqueue (default 2000).
+	MaxLinksPerPage int `yaml:"max_links_per_page"`
+	// HostDenylistPath is the file of banned-host MD5s (ahmia /banned/ format). Required;
+	// a relative path is resolved against the config file's directory.
+	HostDenylistPath string `yaml:"host_denylist_path"`
 }
+
+const defaultMaxLinksPerPage = 2000
 
 type CircuitBreakerConfig struct {
 	ConsecutiveFailures int      `yaml:"consecutive_failures"`
@@ -72,5 +82,20 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, err
 	}
+	if cfg.Crawler.MaxLinksPerPage <= 0 {
+		cfg.Crawler.MaxLinksPerPage = defaultMaxLinksPerPage
+	}
+	// Fail at boot rather than crawl without the denylist (design D4).
+	p := cfg.Crawler.HostDenylistPath
+	if p == "" {
+		return nil, errors.New("crawler.host_denylist_path is required")
+	}
+	if !filepath.IsAbs(p) {
+		p = filepath.Join(filepath.Dir(path), p)
+	}
+	if _, err := os.Stat(p); err != nil {
+		return nil, fmt.Errorf("crawler.host_denylist_path: %w", err)
+	}
+	cfg.Crawler.HostDenylistPath = p
 	return &cfg, nil
 }

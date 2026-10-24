@@ -11,8 +11,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.BiFunction;
 
 /**
- * Minimal JDK HttpServer stub for provider adapter tests — same approach as the existing
- * OllamaAIOrchestratorTest, factored out so the three adapter tests share it.
+ * Minimal JDK HttpServer stub for the provider and embedder adapter tests (and the
+ * acceptance suite's model fakes).
  */
 public final class FakeHttpServer implements AutoCloseable {
 

@@ -11,6 +11,9 @@ Funcionalidade: Ponta a ponta — crawler, Kafka, core, busca semântica, IA e g
     E em até 30 segundos a busca por "quetzal" contém a página "http://linkada-e2e.onion/"
     E em até 30 segundos o total de páginas é pelo menos 3
 
+  Cenário: Endereço .onion em texto puro, sem âncora, é seguido e indexado
+    Então em até 60 segundos a busca por "ornitorrinco" contém a página "http://7hfnguqyq4qq7snghuqy6gxtwerrqfijw3kqf22ilhydoq5r6eqexluf.onion/"
+
   Cenário: Fase 2 — busca semântica acha por conceito
     Então em até 60 segundos a busca semântica por "criptomoedas" contém a página "http://conceito-e2e.onion/"
 

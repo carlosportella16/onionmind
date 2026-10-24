@@ -137,6 +137,31 @@ class AiEnrichmentBackfillJobTest {
     }
 
     @Test
+    void withoutQuotaThePageStaysQueuedWithItsAttemptsUntouched() {
+        insertPage("http://no-quota.onion", "failed_transient", MAX_ATTEMPTS - 1);
+        WaitingEnricher enricher = new WaitingEnricher();
+
+        job(enricher).run();
+        job(enricher).run(); // however many runs: waiting never reaches failed_permanent
+
+        assertThat(jdbc.queryForMap("SELECT ai_status, ai_attempts FROM pages WHERE url = ?", "http://no-quota.onion"))
+            .containsEntry("ai_status", "failed_transient").containsEntry("ai_attempts", MAX_ATTEMPTS - 1);
+        assertThat(published).isEmpty();
+    }
+
+    @Test
+    void withoutQuotaTheRestOfTheBatchIsNotTried() {
+        insertPage("http://first.onion", "pending");
+        insertPage("http://second.onion", "pending");
+        WaitingEnricher enricher = new WaitingEnricher();
+
+        job(enricher).run();
+
+        assertThat(enricher.calls).isEqualTo(1);
+        assertThat(jdbc.queryForList("SELECT ai_status FROM pages", String.class)).containsOnly("pending");
+    }
+
+    @Test
     void successAfterPreviousFailuresIsProcessedAndPublished() {
         insertPage("http://recovered.onion", "failed_transient", MAX_ATTEMPTS - 1);
 
@@ -190,6 +215,19 @@ class AiEnrichmentBackfillJobTest {
         assertThat(row).containsEntry("ai_status", "processed");
         assertThat(row.get("summary")).isNull(); // never touched
         assertThat(published).isEmpty();
+    }
+
+    /** What AbstractAiProcessor returns when the router found no provider with quota. */
+    private static class WaitingEnricher extends FakeEnricher {
+        WaitingEnricher() {
+            super(false);
+        }
+
+        @Override
+        public ProcessingResult process(Document document) {
+            calls++;
+            return ProcessingResult.waiting(document, "SummarizerProcessor: no AI provider with quota");
+        }
     }
 
     private static class FakeEnricher implements AiEnrichingProcessor {

@@ -1,4 +1,4 @@
-# Sandbox profile — local dev. Inherits the ollama/qdrant/embedding/ai blocks from
+# Sandbox profile — local dev. Inherits the qdrant/embedding/ai blocks from
 # application.yml; only the enable flags differ here (fase3-sdd D1). To exercise the
 # real pipeline locally, flip these to true and have the services + API keys in place.
 spring:

@@ -14,17 +14,26 @@ import (
 )
 
 type fakeConnector struct {
-	page *connector.RawPage
-	err  error
+	page    *connector.RawPage
+	err     error
+	fetched []string // every URL requested; read only after Run returns
 }
 
 func (f *fakeConnector) ID() string { return "fake" }
 func (f *fakeConnector) Fetch(ctx context.Context, url string) (*connector.RawPage, error) {
+	f.fetched = append(f.fetched, url)
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.page, nil
 }
+
+// fakeDenylist bans the exact URLs it holds.
+type fakeDenylist map[string]bool
+
+func (d fakeDenylist) Banned(rawURL string) bool { return d[rawURL] }
+
+var noBans = fakeDenylist(nil)
 
 type fakeDedup struct {
 	mu        sync.Mutex
@@ -101,7 +110,7 @@ func TestPool_FetchesPublishesAndEnqueuesLinks(t *testing.T) {
 	pub := &fakePublisher{}
 	f := newFakeFrontier(frontier.URLJob{URL: "http://x.onion/", Depth: 0})
 
-	pool := New(1, conn, d, pub, f, 0)
+	pool := New(1, conn, d, pub, f, noBans, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -120,6 +129,28 @@ func TestPool_FetchesPublishesAndEnqueuesLinks(t *testing.T) {
 	}
 }
 
+func TestPool_BannedHostIsNeverFetchedEvenAsSeed(t *testing.T) {
+	conn := &fakeConnector{page: &connector.RawPage{URL: "http://ok.onion/"}}
+	pub := &fakePublisher{}
+	f := newFakeFrontier(
+		frontier.URLJob{URL: "http://banned.onion/", Depth: 0}, // a seed
+		frontier.URLJob{URL: "http://ok.onion/", Depth: 0},
+	)
+
+	pool := New(1, conn, newFakeDedup(), pub, f, fakeDenylist{"http://banned.onion/": true}, 0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	pool.Run(ctx)
+
+	if len(conn.fetched) != 1 || conn.fetched[0] != "http://ok.onion/" {
+		t.Fatalf("fetched = %v, want only http://ok.onion/", conn.fetched)
+	}
+	if pub.count() != 1 {
+		t.Errorf("expected 1 published page, got %d", pub.count())
+	}
+}
+
 func TestPool_SkipsAlreadySeenURL(t *testing.T) {
 	conn := &fakeConnector{page: &connector.RawPage{URL: "http://x.onion/"}}
 	d := newFakeDedup()
@@ -127,7 +158,7 @@ func TestPool_SkipsAlreadySeenURL(t *testing.T) {
 	pub := &fakePublisher{}
 	f := newFakeFrontier(frontier.URLJob{URL: "http://x.onion/", Depth: 0})
 
-	pool := New(1, conn, d, pub, f, 0)
+	pool := New(1, conn, d, pub, f, noBans, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -144,7 +175,7 @@ func TestPool_FetchErrorSkipsPublish(t *testing.T) {
 	pub := &fakePublisher{}
 	f := newFakeFrontier(frontier.URLJob{URL: "http://x.onion/", Depth: 0})
 
-	pool := New(1, conn, d, pub, f, 0)
+	pool := New(1, conn, d, pub, f, noBans, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -162,7 +193,7 @@ func TestPool_MarksOversizedOnSizeError(t *testing.T) {
 	pub := &fakePublisher{err: sarama.ErrMessageSizeTooLarge}
 	f := newFakeFrontier(frontier.URLJob{URL: "http://big.onion/", Depth: 0})
 
-	pool := New(1, conn, d, pub, f, 0)
+	pool := New(1, conn, d, pub, f, noBans, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -180,7 +211,7 @@ func TestPool_DoesNotMarkOversizedOnOtherPublishErrors(t *testing.T) {
 	pub := &fakePublisher{err: errors.New("network blip")}
 	f := newFakeFrontier(frontier.URLJob{URL: "http://x.onion/", Depth: 0})
 
-	pool := New(1, conn, d, pub, f, 0)
+	pool := New(1, conn, d, pub, f, noBans, 0)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -197,7 +228,7 @@ func TestPool_GracefulShutdownOnContextCancel(t *testing.T) {
 	pub := &fakePublisher{}
 	f := newFakeFrontier() // no jobs — workers just wait on ctx.Done()
 
-	pool := New(2, conn, d, pub, f, 0)
+	pool := New(2, conn, d, pub, f, noBans, 0)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})

@@ -31,17 +31,23 @@ type Frontier interface {
 	Enqueue(parentDepth int, rawHTML []byte, baseURL string)
 }
 
+// BanChecker describes *denylist.Denylist: whether a URL's host must never be fetched.
+type BanChecker interface {
+	Banned(rawURL string) bool
+}
+
 type Pool struct {
 	workers        int
 	conn           connector.SourceConnector
 	dedup          Deduper
 	pub            Publisher
 	frontier       Frontier
+	deny           BanChecker
 	politenessWait time.Duration
 }
 
-func New(n int, conn connector.SourceConnector, d Deduper, p Publisher, f Frontier, politeness time.Duration) *Pool {
-	return &Pool{workers: n, conn: conn, dedup: d, pub: p, frontier: f, politenessWait: politeness}
+func New(n int, conn connector.SourceConnector, d Deduper, p Publisher, f Frontier, deny BanChecker, politeness time.Duration) *Pool {
+	return &Pool{workers: n, conn: conn, dedup: d, pub: p, frontier: f, deny: deny, politenessWait: politeness}
 }
 
 func (p *Pool) Run(ctx context.Context) {
@@ -65,6 +71,11 @@ func (p *Pool) work(ctx context.Context, id int) {
 		case job, ok := <-p.frontier.Jobs():
 			if !ok {
 				return
+			}
+			// Second line after the frontier's filter: covers seeds and any other path in.
+			if p.deny.Banned(job.URL) {
+				slog.Warn("skipping banned host", "worker", id, "url", job.URL, "depth", job.Depth)
+				continue
 			}
 			canon := normalizer.Normalize(job.URL)
 			if p.dedup.SeenRecently(canon) {

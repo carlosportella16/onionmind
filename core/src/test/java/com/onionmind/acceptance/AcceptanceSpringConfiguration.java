@@ -24,9 +24,14 @@ import org.testcontainers.neo4j.Neo4jContainer;
     "ai.backfill.interval-ms=3600000",
     "embedding.backfill-interval-ms=3600000",
     "ai.retry.backoff=10ms",
-    "ai.groq.api-key=acceptance-test-key",
+    "ai.openai-compatible.deepseek.api-key=acceptance-test-key",
     "ai.gemini.api-key=acceptance-test-key",
-    "qdrant.vector-size=" + FakeAiProviders.DIMENSIONS,
+    // Scenarios must not depend on the real tier's ceilings in application.yml: at the free
+    // tier's 15 RPM a multi-page scenario spills to DeepSeek depending on the runner's speed.
+    "ai.providers.gemini.requests-per-minute=1000",
+    "ai.providers.gemini.requests-per-day=100000",
+    "ai.providers.gemini.tokens-per-minute=10000000",
+    "embedding.dimensions=" + FakeAiProviders.DIMENSIONS,
     // ~100 chars per chunk, so a page with a few hundred chars spans several chunks
     "embedding.chunk-size=25",
     "illegal-content.url-denylist-path=classpath:acceptance/onion-denylist.txt",
@@ -65,8 +70,7 @@ public class AcceptanceSpringConfiguration {
             return registry -> {
                 registry.add("qdrant.url", qdrantContainer::getHost);
                 registry.add("qdrant.port", () -> qdrantContainer.getMappedPort(6333));
-                registry.add("ollama.url", fakes.ollama::baseUrl);
-                registry.add("ai.groq.base-url", fakes.groq::baseUrl);
+                registry.add("ai.openai-compatible.deepseek.base-url", fakes.deepseek::baseUrl);
                 registry.add("ai.gemini.base-url", fakes.gemini::baseUrl);
             };
         }

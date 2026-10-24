@@ -2,7 +2,7 @@
 
 > AI-powered Knowledge Discovery Platform for the Tor Network.
 
-**Current Phase:** Phase 3 validated end-to-end (2026-09-06) — real generation pipeline (summarize / classify / detect language) with a multi-provider `AIOrchestrator` (Ollama, Groq, Gemini), an AI Cost Optimizer, an illegal-content guard, and enrichment surfaced in search, all proven against live Groq + Gemini + Ollama (see `docs/onionmind-fase3-sdd.md` §11.4 / §12). Phase 2's exit gate has also been re-run against live Ollama + Qdrant and its `min-score` recalibrated from real corpus data (§P2-1/P2-2).
+**Current Phase:** Phase 3 validated end-to-end (2026-09-06) — real generation pipeline (summarize / classify / detect language) with a multi-provider `AIOrchestrator` (Ollama, Groq, Gemini), an AI Cost Optimizer, an illegal-content guard, and enrichment surfaced in search, all proven against live Groq + Gemini + Ollama (see `docs/onionmind-fase3-sdd.md` §11.4 / §12). Phase 2's exit gate has also been re-run against live Ollama + Qdrant and its `min-score` recalibrated from real corpus data (§P2-1/P2-2). Since `replace-ollama-with-gemini-deepseek` (2026-10-24) the providers are paid Gemini + DeepSeek and there is no local model — see [AI providers](#ai-providers-privacy-and-quota).
 
 **Tech Stack:** Go (crawler) • Java 25 (Spring Boot 4.1 + Spring Modulith) • PostgreSQL • Redpanda • React
 
@@ -17,7 +17,7 @@ OnionMind discovers, crawls, indexes, and analyzes `.onion` content, transformin
 Most Tor search engines are link lists without ranking or context. OnionMind changes that:
 - **Continuous Discovery:** Go crawler autonomously finds new pages via Tor
 - **Intelligent Indexing:** Full-text search (PostgreSQL), semantic search (Qdrant), knowledge graph (Neo4j)
-- **Free AI:** Summaries, classification, entity extraction — locally via Ollama + free tiers (Groq, Gemini Flash)
+- **Cheap AI:** Summaries, classification, entity extraction and embeddings through paid, capped cloud providers (Gemini 2.5 Flash-Lite, DeepSeek) — no local model to host
 - **Incremental Delivery:** Each phase ships a working product — no phase exists just for infrastructure
 
 ---
@@ -72,7 +72,7 @@ Most Tor search engines are link lists without ranking or context. OnionMind cha
 ### Phase 1 Details
 
 Ships a functional Tor search engine without AI:
-- **Crawler:** TorConnector discovers URLs via Tor, avoids traps, deduplicates with Redis. A page too large to publish is recorded (not just logged) at `skipped:oversized:<sha256(url)>` — `redis-cli --scan --pattern 'skipped:oversized:*'` lists them, each value is `url|size_bytes|timestamp`
+- **Crawler:** TorConnector discovers URLs via Tor (anchors and plain-text v3 `.onion` addresses, capped per page), never fetches hosts on its MD5 denylist (see [Crawler host denylist](#crawler-host-denylist)), avoids traps, deduplicates with Redis. A page too large to publish is recorded (not just logged) at `skipped:oversized:<sha256(url)>` — `redis-cli --scan --pattern 'skipped:oversized:*'` lists them, each value is `url|size_bytes|timestamp`
 - **Sanitization:** HTML cleaned before any persistence (OWASP allowlist)
 - **Indexing:** PostgreSQL `tsvector` GENERATED column + GIN index, `ts_rank` for relevance
 - **REST API:** GET `/api/search?q=term` returns ranked pages
@@ -80,10 +80,10 @@ Ships a functional Tor search engine without AI:
 
 ### Phase 3 Details
 
-Adds LLM-generated understanding without coupling to one provider or a paid account:
-- **`AIOrchestrator`:** one interface (`summarize` / `classify` / `translate` / `detectLanguage` / `embed`); a decorator chain (metrics → cache → retry → validation) with a provider-escalation loop that switches provider on a low-confidence answer and returns the best result rather than throwing.
-- **Three adapters:** `OllamaProvider` (local, no rate limit), `GroqProvider` (fast, daily + per-minute cap), `GeminiProvider` (1M context, tighter cap). Missing API key → the provider reports zero quota and is skipped.
-- **AI Cost Optimizer:** short non-critical text starts local, long/critical starts on the cloud; Ollama is always the floor. `ProviderQuotaTracker` counts daily and per-minute usage in Redis.
+Adds LLM-generated understanding without coupling to one provider:
+- **`AIOrchestrator`:** one interface (`summarize` / `classify` / `translate` / `detectLanguage` / `extractEntities` / `embed`); a decorator chain (metrics → cache → retry → validation) with a provider-escalation loop that switches provider on a low-confidence answer and returns the best result rather than throwing.
+- **Two cloud adapters:** `GeminiProvider` (`gemini-3.5-flash-lite`, system prompt in `systemInstruction`, JSON output, thinking at its `minimal` level) and `OpenAiCompatibleProvider` — one bean per `ai.openai-compatible.<id>`, today DeepSeek (`deepseek-flash`, JSON mode, thinking off). Missing API key → the provider reports zero quota and is skipped.
+- **AI Cost Optimizer:** one ladder, `ai.ladder: gemini,deepseek`, for every task — cheapest first, falling to the next rung when a provider is out of quota or answers with low confidence. `ProviderQuotaTracker` counts daily and per-minute requests in Redis against `ai.providers.<id>`; DeepSeek has no entry there, so only its prepaid balance gates it.
 - **Enrichment processors** (`ContentProcessor`, order 10–40): language detection (local stopword heuristic, escalates to the LLM when ambiguous), 2–3 sentence summary of the original text, fixed-taxonomy classification. Each skips work when `content_hash` is unchanged. Pages are not translated (removed in `remove-page-translation`: no API read it, and it was the largest call); `translate` stays on `AIOrchestrator` for the bilingual-search backlog.
 - **English output:** every prompt is in English and every LLM-generated text — page summary, change summary — comes out in English, whatever the page language. Category and entity-type codes are fixed identifiers. Summaries written in Portuguese before this change stay until the page changes; to standardize the corpus, re-queue it in batches, e.g. `UPDATE pages SET ai_status = 'pending' WHERE id IN (SELECT id FROM pages WHERE ai_status = 'processed' AND language->>'code' = 'pt' ORDER BY id LIMIT 200);` — each page spends LLM quota again.
 - **Illegal-content guard** (order 5, before any model): URL/host denylist + audited text patterns; a match halts the pipeline, records an audit row and persists no content. Perceptual image hashing is a documented gap (no images are stored).
@@ -92,6 +92,28 @@ Adds LLM-generated understanding without coupling to one provider or a paid acco
 - **Limits:** each LLM call gets at most `ai.max-input-chars` (default 8000) characters of page text (`entities.max-input-chars` for named entities), so 1–2 MB pages stop hitting provider length limits. The summary of a page past that cap covers only its beginning; `extracted_text`, full-text search and the entity patterns still see the whole page. A page whose enrichment fails `ai.backfill.max-attempts` times (default 5, counted in `pages.ai_attempts`) goes `failed_permanent` and leaves the backfill queue and `ingestion.ai.lag`. A re-crawl with new content resets it to `pending` with zero attempts; to re-queue by hand: `UPDATE pages SET ai_status = 'pending', ai_attempts = 0 WHERE ai_status = 'failed_permanent' AND ...;`.
 
 Enable it with `ai.enabled=true` and the two API keys (below). With it off, the app behaves exactly as Phase 2.
+
+### AI providers, privacy and quota
+
+Since `replace-ollama-with-gemini-deepseek` (2026-10-24) there is no local model and no Groq: Ollama is gone from the compose file, and Groq from the ladder.
+
+- **Providers:**
+  - generation: `gemini-3.5-flash-lite` first (`gemini-2.5-flash-lite` is closed to new users since 2026-10), `deepseek-flash` as the last rung;
+  - embeddings: `gemini-embedding-2` at 768 dimensions, batched (`batchEmbedContents`), with query/document role prefixes and only the first `embedding.max-chars-per-page` (50 000) characters of a page. DeepSeek has no embeddings API.
+- **Keys:** `GEMINI_API_KEY` (generation and embeddings; required whenever `embedding.enabled=true`) and `DEEPSEEK_API_KEY`. Both are paid.
+- **Privacy decision (2026-10-24):** `.onion` page text is sent to **Google (Gemini, paid tier)** and to **DeepSeek (China)**. The Gemini key must belong to a project **with billing**: the free tier may use the content to improve Google's products and show it to human reviewers, and it is not approved for this content. The prompts and every generated text are in English.
+- **No quota is not a failure:** when no provider has quota or balance, the enrichment backfill and the change-summary job leave the item queued without spending `ai_attempts` / `attempts`, and stop that run.
+- **Token budget (`ai-token-quota`):** providers cut on tokens per minute long before requests, so `ai.providers.<id>` takes `requests-per-minute`, `requests-per-day`, `tokens-per-minute` and `tokens-per-day` (a ceiling left out is not tracked). Every call adds the tokens the provider reported (`usageMetadata.totalTokenCount` / `usage.total_tokens`), or chars/4 when it reports none, to `quota:<id>:tokens:minute:*` and `quota:<id>:tokens:day:*`. A provider is only picked if the prompt's estimated tokens (chars/4) fit what is left.
+- **Interactive reserve:** batch tasks (enrichment, change summaries) read each budget with `ai.interactive-reserve-percent` (30) added to `ai.safety-margin-percent` (5), so the last 35% stays free for interactive tasks such as the Phase 5 chat, which only keep the 5% margin.
+- **Config migration:** the old `ai.groq.daily-limit` / `ai.groq.minute-limit` (and the Gemini pair) are gone; use `ai.providers.<id>.requests-per-day` / `requests-per-minute`, plus the token ceilings.
+- **Parking:** a provider that hits a limit is parked in Redis at `quota:<id>:parked`:
+  - a 429 per minute parks it until the minute ends;
+  - a Gemini 429 on a per-day quota parks it until midnight Pacific, when Google resets it;
+  - a DeepSeek **402 (out of balance)** parks it with no TTL and logs a warning. Top up the balance, then release it with a restart or by hand: `redis-cli DEL quota:deepseek:parked`.
+- **Vector collection migration:** embeddings now go to a new Qdrant collection, `page_chunks_v2` (`qdrant.collection`). Every point stores its `model` and the chunk `text`, a point of another model never counts as "unchanged", and the core refuses to boot if the configured collection exists with another dimension. To re-embed the corpus:
+  1. run `UPDATE pages SET embedding_status = 'pending';` and let the embedding backfill run;
+  2. recalibrate `embedding.min-score` (the 0.45 in `application.yml` is nomic-embed-text's);
+  3. delete the old `page_chunks` collection by hand once the new one is validated (`curl -X DELETE http://localhost:6333/collections/page_chunks`), along with the old `ollama_data` volume (`docker volume rm onionmind_ollama_data`).
 
 ### Phase 4 Details
 
@@ -121,12 +143,12 @@ git clone https://github.com/carlosportella/onionmind.git
 cd onionmind
 
 # Start infrastructure — postgres, redpanda, redpanda-console, redis, tor,
-# ollama (pulls nomic-embed-text for embeddings + llama3.1:8b for generation),
-# qdrant (Phase 2+), neo4j (Phase 4). The tor image is built from tor/Dockerfile
+# qdrant (Phase 2+), neo4j (Phase 4). No local AI model: generation and embeddings
+# come from Gemini/DeepSeek (keys below). The tor image is built from tor/Dockerfile
 # (Alpine-packaged Tor); after pulling a change to it, run `docker compose build tor`.
 docker-compose up -d
 
-# Wait for services to report healthy — the two ollama-pull jobs run once and exit.
+# Wait for services to report healthy — redpanda-config runs once and exits.
 # tor turns healthy only once its log reaches "Bootstrapped 100%"; start the crawler after that.
 docker compose ps
 
@@ -153,12 +175,12 @@ cd core
 ```
 
 **Enabling AI (Phase 2 embeddings and/or Phase 3 generation):** both are off by
-default. Set the flags and, for generation, the free-tier API keys as
-environment variables (never commit them):
+default. Set the flags and the paid API keys as environment variables (never
+commit them):
 
 ```bash
-export GROQ_API_KEY=...      # https://console.groq.com
-export GEMINI_API_KEY=...    # https://aistudio.google.com
+export GEMINI_API_KEY=...    # https://aistudio.google.com — a project WITH billing (embeddings + generation)
+export DEEPSEEK_API_KEY=...  # https://platform.deepseek.com — prepaid balance (generation, last rung)
 ./gradlew bootRun --args='--spring.profiles.active=sandbox \
   --embedding.enabled=true --ai.enabled=true'
 ```
@@ -184,8 +206,9 @@ curl 'http://localhost:8081/api/entities/crypto_wallet/1A1zP1eP5QGefi2DMPTfTL5SL
   spends LLM quota again (all enrichment steps re-run), so do it deliberately.
 
 With no key set for a provider it simply reports zero quota and the router
-skips it, degrading to local Ollama. Limits in `application.yml` are the
-free-tier numbers as of Aug 2026 — reconfirm before production.
+skips it; with no usable provider at all, pages wait in the backfill queue. The
+Gemini limits in `ai.providers` are placeholders for the paid tier — the
+per-project numbers are in AI Studio; confirm them before production.
 
 **Note:** `docker-compose.yml`'s `redpanda` service only advertises its
 in-network hostname (`redpanda:9092`) by default for containers on the
@@ -204,6 +227,31 @@ docker run --rm --network onionmind_default onionmind-crawler
 cd web
 npm run dev
 # UI available: http://localhost:5173
+```
+
+#### Crawler host denylist
+
+The frontier follows `<a href>` links **and** v3 `.onion` addresses written as plain text (ahmia's `/onions/` listing has no anchors at all). Before a URL is queued, and again before it is fetched (seeds included), the crawler checks its host against a list of banned-host MD5 hashes and drops it on a match. This is the first line of defence; the core's illegal-content guard still filters after ingestion.
+
+Two settings in `crawler/config.yaml`, under `crawler`:
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `max_links_per_page` | `2000` | At most this many distinct `.onion` links are queued per page, so a listing with thousands of hosts cannot take over the queue. |
+| `host_denylist_path` | `denylist/banned-hosts.md5` | File of banned-host hashes, relative to the config file. **Required**: a missing file stops the crawler at boot. An empty file is allowed (the log says `hosts=0`). |
+
+The file has ahmia's `/banned/` format: one hex MD5 per line, each the hash of the bare domain `<56 base32>.onion`. No scheme, port, path or subdomain, and lowercase, as in ahmia-site's `BannedDomainListView`. The crawler normalizes every URL the same way before hashing, so case, `https://`, ports, paths and `www.` do not matter. Blank lines are skipped, and any other line that is not a 32-char hex hash is dropped and counted in the log (`invalid_lines`).
+
+The repo ships only an empty placeholder (`crawler/denylist/banned-hosts.md5`, baked into the image). As with the core's URL denylist, the populated list stays **out of the repo** (never write it into `crawler/denylist/`). Generate it at deploy, review it, and mount it over the placeholder:
+
+```bash
+# ahmia's /banned/ already serves the hashes; keep only well-formed lines.
+curl -s https://ahmia.fi/banned/ | grep -Eo '^[0-9a-f]{32}$' > /secure/banned-hosts.md5
+# To add a host of your own (Linux md5sum; on macOS use `md5 -q -s '<host>.onion'`):
+printf '%s' '<56 base32>.onion' | md5sum | cut -c1-32 >> /secure/banned-hosts.md5
+
+docker run --rm --network onionmind_default \
+  -v /secure/banned-hosts.md5:/denylist/banned-hosts.md5:ro onionmind-crawler
 ```
 
 **Search directly against the API:** http://localhost:8081/api/search?q=bitcoin
@@ -258,9 +306,9 @@ What is real vs. fake:
 
 | Real (Testcontainers / in-process) | Fake |
 |---|---|
-| Postgres, Kafka (`raw-pages`), Redis (quota + cache), Qdrant, Neo4j, pipeline, event listeners, `CostOptimizerRouter`, `ProviderQuotaTracker`, decorators, Ollama/Groq/Gemini HTTP adapters | The model endpoints only: three local HTTP stubs answer generation deterministically and return bag-of-concepts embeddings (`FakeAiProviders`) |
+| Postgres, Kafka (`raw-pages`), Redis (quota + cache), Qdrant, Neo4j, pipeline, event listeners, `CostOptimizerRouter`, `ProviderQuotaTracker`, decorators, Gemini/DeepSeek HTTP adapters, `GeminiEmbedder` | The model endpoints only: two local HTTP stubs (Gemini, DeepSeek) answer generation deterministically and return bag-of-concepts embeddings (`FakeAiProviders`) |
 
-No API keys, Tor or local models are needed.
+No API keys, Tor or real models are needed.
 
 ```bash
 cd core
@@ -270,7 +318,7 @@ cd core
 **Smoke tests** — `features/smoke/smoke.feature`, tagged `@smoke`.
 
 - They send GET requests only against an already running instance and write nothing, so they are safe against shared environments.
-- They are excluded from `./gradlew test`. In CI, the `smoke` job (after `ci-java`) boots the core against real Postgres, Kafka and Redis and runs them with `SMOKE_TAGS='@smoke and not @semantic and not @grafo'` (there is no Ollama, Qdrant or Neo4j on the runner).
+- They are excluded from `./gradlew test`. In CI, the `smoke` job (after `ci-java`) boots the core against real Postgres, Kafka and Redis and runs them with `SMOKE_TAGS='@smoke and not @semantic and not @grafo'` (there is no Qdrant, Neo4j or AI key on the runner).
 
 ```bash
 ./scripts/smoke.sh                                         # http://localhost:8081, every @smoke scenario
@@ -316,8 +364,8 @@ crawler image ──SOCKS5──▶ e2e-fakes (fake Tor + .onion sites)
       │
       ▼ raw-pages
   Redpanda ──▶ core ──▶ Postgres (Fase 1)
-                 ├────▶ Qdrant + fake Ollama embeddings (Fase 2)
-                 ├────▶ fake Ollama generation, denylist quarantine (Fase 3)
+                 ├────▶ Qdrant + fake Gemini embeddings (Fase 2)
+                 ├────▶ fake Gemini/DeepSeek generation, denylist quarantine (Fase 3)
                  └────▶ entities → Neo4j (Fase 4)
                  ▲
      @e2e + @smoke Cucumber scenarios (GET only)
@@ -330,8 +378,8 @@ crawler image ──SOCKS5──▶ e2e-fakes (fake Tor + .onion sites)
 The script runs these steps:
 
 1. Builds the core jar.
-2. Starts `e2e/docker-compose.e2e.yml`, which includes the **real crawler image** and `crawler/cmd/e2e-fakes` (Tor, the `.onion` sites and Ollama).
-3. Runs the `@e2e` scenarios. They check that the seed and the linked page are searchable, that semantic search finds a page by concept, that results carry a summary and category, that the denylisted host is not indexed, and that a crawled wallet shows up in `/api/entities` with its page.
+2. Starts `e2e/docker-compose.e2e.yml`, which includes the **real crawler image** and `crawler/cmd/e2e-fakes` (Tor, the `.onion` sites, Gemini and DeepSeek).
+3. Runs the `@e2e` scenarios. They check that the seed and the linked page are searchable, that a page reached only through a plain-text `.onion` address is indexed, that semantic search finds a page by concept, that results carry a summary and category, that the denylisted host is not indexed, and that a crawled wallet shows up in `/api/entities` with its page.
 4. Checks that the crawler container exits with code 0 on `SIGTERM`.
 5. Runs every `@smoke` scenario, `@semantic` and `@ia` included.
 
@@ -422,8 +470,9 @@ onionmind/
 │   ├── Dockerfile                   # distroless, non-root
 │   ├── config.yaml                  # workers, seeds, Tor/Redis/Redpanda addresses
 │   ├── go.mod, go.sum
+│   ├── denylist/banned-hosts.md5    # empty placeholder for the banned-host MD5 list
 │   ├── cmd/crawler/main.go
-│   └── internal/{config,connector,dedup,frontier,normalizer,publisher,worker}/
+│   └── internal/{config,connector,dedup,denylist,frontier,normalizer,publisher,worker}/
 ├── web/                               # React SPA — search bar + result list
 │   ├── Dockerfile
 │   └── src/{api,components}/

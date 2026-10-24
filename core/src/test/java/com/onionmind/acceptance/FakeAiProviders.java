@@ -5,18 +5,22 @@ import com.onionmind.ai.FakeHttpServer.Reply;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 
 /**
- * The only fakes in the acceptance suite: the external model endpoints (design D4). Real
- * adapters, router, quota tracker, decorators and Qdrant talk to these over HTTP.
+ * The only fakes in the acceptance suite: the external model endpoints (design D4) — Gemini
+ * (generateContent and batchEmbedContents) and DeepSeek (chat/completions). Real adapters,
+ * router, quota tracker, decorators and Qdrant talk to these over HTTP.
  *
  * <p>Generation answers are deterministic per task type. Embeddings are a bag of concepts:
  * terms from {@link #CONCEPTS} weigh heavily on their concept's axis, every other word lands
  * lightly on a hashed axis — so paraphrases of one concept are close, unrelated text is not.
+ * The role prefix GeminiEmbedder adds is stripped first: it is the same on every text.
  */
 final class FakeAiProviders implements AutoCloseable {
 
@@ -30,30 +34,43 @@ final class FakeAiProviders implements AutoCloseable {
     private static final double CONCEPT_WEIGHT = 3.0;
     private static final double WORD_WEIGHT = 0.3;
     private static final Pattern WORDS = Pattern.compile("\\p{L}+");
+    private static final Pattern ROLE_PREFIX = Pattern.compile("^(task: [^|]*\\| query: |title: [^|]*\\| text: )");
 
     private final ObjectMapper mapper = JsonMapper.builder().build();
 
-    final FakeHttpServer ollama = new FakeHttpServer();
-    final FakeHttpServer groq = new FakeHttpServer();
+    final FakeHttpServer deepseek = new FakeHttpServer();
     final FakeHttpServer gemini = new FakeHttpServer();
 
     /** What the fake model answers to a classification prompt; scenarios may override it. */
     volatile String categoryAnswer;
 
+    private final Map<FakeHttpServer, BiFunction<String, String, Reply>> answering = new HashMap<>();
+
     FakeAiProviders() {
+        deepseek.responder = (path, body) -> json(Map.of("choices",
+            List.of(Map.of("message", Map.of("content", answer(body, "deepseek"))))));
+        gemini.responder = (path, body) -> path.endsWith(":batchEmbedContents")
+            ? json(Map.of("embeddings", mapper.readTree(body).path("requests").valueStream()
+                .map(r -> Map.of("values", toList(embed(stripRole(r.at("/content/parts/0/text").asString())))))
+                .toList()))
+            : json(Map.of("candidates",
+                List.of(Map.of("content", Map.of("parts", List.of(Map.of("text", answer(body, "gemini"))))))));
+        for (FakeHttpServer s : List.of(deepseek, gemini)) {
+            answering.put(s, s.responder);
+        }
         reset();
-        ollama.responder = (path, body) -> path.endsWith("/api/embed")
-            ? json(Map.of("embeddings", List.of(toList(embed(field(body, "input"))))))
-            : json(Map.of("response", answer(body, "ollama")));
-        groq.responder = (path, body) -> json(Map.of("choices",
-            List.of(Map.of("message", Map.of("content", answer(body, "groq"))))));
-        gemini.responder = (path, body) -> json(Map.of("candidates",
-            List.of(Map.of("content", Map.of("parts", List.of(Map.of("text", answer(body, "gemini"))))))));
+    }
+
+    /** Back to answering normally after a scenario made the fake fail (e.g. HTTP 402). */
+    void restore(FakeHttpServer server) {
+        server.status = 200;
+        server.responder = answering.get(server);
     }
 
     void reset() {
         categoryAnswer = "forum";
-        for (FakeHttpServer s : List.of(ollama, groq, gemini)) {
+        for (FakeHttpServer s : List.of(deepseek, gemini)) {
+            restore(s);
             s.requestBodies.clear();
             s.requestPaths.clear();
             s.authHeaders.clear();
@@ -62,7 +79,7 @@ final class FakeAiProviders implements AutoCloseable {
 
     /** Generation calls (not embeddings) the given fake received. */
     static long generationCalls(FakeHttpServer server) {
-        return server.requestPaths.stream().filter(p -> !p.endsWith("/api/embed")).count();
+        return server.requestPaths.stream().filter(p -> !p.endsWith(":batchEmbedContents")).count();
     }
 
     /** Named entities the fake model "recognises" when they appear in the page text (Fase 4). */
@@ -136,8 +153,8 @@ final class FakeAiProviders implements AutoCloseable {
         return List.of(boxed);
     }
 
-    private String field(String json, String name) {
-        return mapper.readTree(json).path(name).asString("");
+    static String stripRole(String text) {
+        return ROLE_PREFIX.matcher(text).replaceFirst("");
     }
 
     private Reply json(Object body) {
@@ -146,8 +163,7 @@ final class FakeAiProviders implements AutoCloseable {
 
     @Override
     public void close() {
-        ollama.close();
-        groq.close();
+        deepseek.close();
         gemini.close();
     }
 }

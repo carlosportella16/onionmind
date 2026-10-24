@@ -27,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Fase 2 exit gate (roadmap, master-sdd.md sec. 5): "busca por conceito encontra o que
- * full-text não encontrava". Qdrant/Ollama aren't wired into Testcontainers here — same as
+ * full-text não encontrava". Qdrant/Gemini aren't wired into Testcontainers here — same as
  * QdrantVectorStoreTest/EmbeddingProcessorTest, this exercises the real fusion/API wiring
  * against fakes standing in for the two AI-backed dependencies, not the AI itself.
  */

@@ -1,6 +1,7 @@
 // Command e2e-fakes stands in for everything external in the end-to-end smoke stack
 // (e2e/docker-compose.e2e.yml): the Tor network (SOCKS5 on :1080), the .onion sites
-// behind it (:8080) and Ollama (:11434). Test infrastructure, not shipped.
+// behind it (:8080) and the AI providers, Gemini and DeepSeek (:8090). Test infrastructure,
+// not shipped.
 package main
 
 import (
@@ -21,6 +22,13 @@ var pages = map[string]string{
 <a href="http://linkada-e2e.onion/">linkada</a>
 <a href="http://conceito-e2e.onion/">conceito</a>
 <a href="http://proibido-e2e.onion/">proibido</a>
+<p>Sites listados em texto:<br>
+  http://7hfnguqyq4qq7snghuqy6gxtwerrqfijw3kqf22ilhydoq5r6eqexluf.onion/<br></p>
+</body></html>`,
+	// Reached only through the plain-text address above (no <a>), like ahmia's /onions/.
+	// Synthetic v3 host.
+	"7hfnguqyq4qq7snghuqy6gxtwerrqfijw3kqf22ilhydoq5r6eqexluf.onion": `<html><body>
+<p>Página achada só pelo endereço em texto, onde o ornitorrinco guarda o índice da rede.</p>
 </body></html>`,
 	"linkada-e2e.onion": `<html><body>
 <p>Página descoberta por link, que fala do quetzal e da comunidade que mantém o portal desde o início.</p>
@@ -44,14 +52,14 @@ func main() {
 	}
 
 	go serve(":8080", sites)
-	go serve(":11434", ollamaHandler())
+	go serve(":8090", aiHandler())
 
 	socks, err := testfakes.NewSOCKS5Server(":1080", "127.0.0.1:8080")
 	if err != nil {
 		slog.Error("socks5 listen failed", "err", err)
 		os.Exit(1)
 	}
-	slog.Info("e2e fakes up", "socks5", socks.Addr(), "sites", ":8080", "ollama", ":11434")
+	slog.Info("e2e fakes up", "socks5", socks.Addr(), "sites", ":8080", "ai", ":8090")
 	select {}
 }
 

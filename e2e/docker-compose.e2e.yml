@@ -1,6 +1,7 @@
 # End-to-end smoke stack (change crawler-integration-and-e2e-smoke, Neo4j since Fase 4). Everything external
-# is faked by e2e-fakes — Tor (SOCKS5), the .onion sites and Ollama — so it runs with no
-# network access to Tor or any AI provider. Run it through scripts/e2e-smoke.sh.
+# is faked by e2e-fakes — Tor (SOCKS5), the .onion sites and the AI providers (Gemini, DeepSeek)
+# — so it runs with no network access to Tor or any AI provider, and the keys are fake.
+# Run it through scripts/e2e-smoke.sh.
 # Only the core's port is published, so it can run next to the dev docker-compose.yml
 # as long as port 8081 is free.
 name: onionmind-e2e
@@ -61,7 +62,7 @@ services:
       context: ../crawler
       dockerfile: ../e2e/Dockerfile.fakes
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 1080 && nc -z localhost 8080 && nc -z localhost 11434"]
+      test: ["CMD-SHELL", "nc -z localhost 1080 && nc -z localhost 8080 && nc -z localhost 8090"]
       interval: 2s
       retries: 30
 
@@ -74,9 +75,12 @@ services:
       - --spring.datasource.url=jdbc:postgresql://postgres:5432/onionmind
       - --spring.kafka.bootstrap-servers=redpanda:9092
       - --spring.data.redis.host=redis
-      - --ollama.url=http://fakes:11434
+      - --ai.gemini.base-url=http://fakes:8090/v1beta
+      - --ai.gemini.api-key=e2e-fake-key
+      - --ai.openai-compatible.deepseek.base-url=http://fakes:8090
+      - --ai.openai-compatible.deepseek.api-key=e2e-fake-key
       - --qdrant.url=qdrant
-      - --qdrant.vector-size=64
+      - --embedding.dimensions=64
       - --embedding.enabled=true
       - --embedding.backfill-interval-ms=5000
       - --ai.enabled=true

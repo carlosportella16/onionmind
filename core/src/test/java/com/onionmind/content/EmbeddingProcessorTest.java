@@ -23,11 +23,16 @@ class EmbeddingProcessorTest {
 
     private static final int CHUNK_SIZE_TOKENS = 100; // 400 chars
     private static final int OVERLAP_PERCENT = 15;
+    private static final int MAX_CHARS = 50_000;
+
+    private static EmbeddingProcessor processor(AIOrchestrator ai, VectorStore store) {
+        return new EmbeddingProcessor(ai, store, CHUNK_SIZE_TOKENS, OVERLAP_PERCENT, MAX_CHARS);
+    }
 
     @Test
     void skipsDocumentsWithoutExtractedText() {
         FakeVectorStore store = new FakeVectorStore();
-        EmbeddingProcessor processor = new EmbeddingProcessor(new FakeAIOrchestrator(), store, CHUNK_SIZE_TOKENS, OVERLAP_PERCENT);
+        EmbeddingProcessor processor = processor(new FakeAIOrchestrator(), store);
         Document doc = new Document("http://example.onion", "tor", "<html></html>", null, DocumentType.HTML);
 
         ProcessingResult result = processor.process(doc);
@@ -41,13 +46,13 @@ class EmbeddingProcessorTest {
         FakeVectorStore store = new FakeVectorStore();
         store.unchanged = true;
         FakeAIOrchestrator ai = new FakeAIOrchestrator();
-        EmbeddingProcessor processor = new EmbeddingProcessor(ai, store, CHUNK_SIZE_TOKENS, OVERLAP_PERCENT);
+        EmbeddingProcessor processor = processor(ai, store);
         Document doc = new Document("http://example.onion", "tor", "<html></html>", "unchanged content", DocumentType.HTML);
 
         ProcessingResult result = processor.process(doc);
 
         assertThat(result.status()).isEqualTo(ProcessingResult.Status.SKIPPED);
-        assertThat(ai.embedCalls).isZero();
+        assertThat(ai.batchCalls).isZero();
         assertThat(store.upsertCalls).isZero();
     }
 
@@ -55,14 +60,15 @@ class EmbeddingProcessorTest {
     void newContentIsChunkedEmbeddedAndUpserted() {
         FakeVectorStore store = new FakeVectorStore();
         FakeAIOrchestrator ai = new FakeAIOrchestrator();
-        EmbeddingProcessor processor = new EmbeddingProcessor(ai, store, CHUNK_SIZE_TOKENS, OVERLAP_PERCENT);
+        EmbeddingProcessor processor = processor(ai, store);
         String longText = "x".repeat(1000); // spans multiple 400-char chunks
         Document doc = new Document("http://example.onion", "tor", "<html></html>", longText, DocumentType.HTML);
 
         ProcessingResult result = processor.process(doc);
 
         assertThat(result.status()).isEqualTo(ProcessingResult.Status.SUCCESS);
-        assertThat(ai.embedCalls).isGreaterThan(1);
+        assertThat(ai.batchCalls).isEqualTo(1);
+        assertThat(ai.lastTexts).hasSizeGreaterThan(1);
         assertThat(store.upsertCalls).isEqualTo(1);
         assertThat(store.lastUpsertedPoints).hasSizeGreaterThan(1);
         Set<Integer> chunkIndexes = new HashSet<>();
@@ -74,11 +80,42 @@ class EmbeddingProcessorTest {
     }
 
     @Test
+    void allChunksOfAPageGoInOneBatchInOrderWithTheirText() {
+        FakeVectorStore store = new FakeVectorStore();
+        FakeAIOrchestrator ai = new FakeAIOrchestrator();
+        EmbeddingProcessor processor = processor(ai, store);
+        String text = "a".repeat(400) + "b".repeat(400) + "c".repeat(400);
+
+        processor.process(new Document("http://example.onion", "tor", null, text, DocumentType.HTML));
+
+        assertThat(ai.batchCalls).isEqualTo(1);
+        assertThat(ai.lastTitle).isEqualTo("http://example.onion");
+        assertThat(ai.lastCtx.interactive()).isFalse(); // document role, not query
+        assertThat(store.lastUpsertedPoints).extracting(EmbeddingPoint::chunkIndex)
+            .containsExactly(java.util.stream.IntStream.range(0, ai.lastTexts.size()).boxed().toArray(Integer[]::new));
+        assertThat(store.lastUpsertedPoints).extracting(EmbeddingPoint::text).containsExactlyElementsOf(ai.lastTexts);
+    }
+
+    @Test
+    void onlyTheFirstMaxCharsOfAPageAreChunkedAndEmbedded() {
+        FakeVectorStore store = new FakeVectorStore();
+        FakeAIOrchestrator ai = new FakeAIOrchestrator();
+        EmbeddingProcessor processor = new EmbeddingProcessor(ai, store, CHUNK_SIZE_TOKENS, 0, 1000);
+        String text = "h".repeat(1000) + "TAIL" + "t".repeat(1_300_000); // a 1.3 MB listing
+
+        ProcessingResult result = processor.process(new Document("http://big.onion", "tor", null, text, DocumentType.HTML));
+
+        assertThat(result.status()).isEqualTo(ProcessingResult.Status.SUCCESS);
+        assertThat(ai.lastTexts).hasSize(3); // 1000 chars in 400-char chunks, no overlap
+        assertThat(String.join("", ai.lastTexts)).isEqualTo("h".repeat(1000));
+    }
+
+    @Test
     void embeddingFailureReturnsFailedResultWithoutUpserting() {
         FakeVectorStore store = new FakeVectorStore();
         FakeAIOrchestrator ai = new FakeAIOrchestrator();
         ai.failOnCall = 0;
-        EmbeddingProcessor processor = new EmbeddingProcessor(ai, store, CHUNK_SIZE_TOKENS, OVERLAP_PERCENT);
+        EmbeddingProcessor processor = processor(ai, store);
         Document doc = new Document("http://example.onion", "tor", "<html></html>", "will fail", DocumentType.HTML);
 
         ProcessingResult result = processor.process(doc);
@@ -92,7 +129,7 @@ class EmbeddingProcessorTest {
     void vectorStoreThrowingOnHasUnchangedReturnsFailedInsteadOfPropagating() {
         FakeVectorStore store = new FakeVectorStore();
         store.throwOnHasUnchanged = true;
-        EmbeddingProcessor processor = new EmbeddingProcessor(new FakeAIOrchestrator(), store, CHUNK_SIZE_TOKENS, OVERLAP_PERCENT);
+        EmbeddingProcessor processor = processor(new FakeAIOrchestrator(), store);
         Document doc = new Document("http://example.onion", "tor", "<html></html>", "some content", DocumentType.HTML);
 
         // Regression: Qdrant unreachable here must not throw out of process() — IngestionPipeline
@@ -106,7 +143,7 @@ class EmbeddingProcessorTest {
     void vectorStoreThrowingOnUpsertReturnsFailedInsteadOfPropagating() {
         FakeVectorStore store = new FakeVectorStore();
         store.throwOnUpsert = true;
-        EmbeddingProcessor processor = new EmbeddingProcessor(new FakeAIOrchestrator(), store, CHUNK_SIZE_TOKENS, OVERLAP_PERCENT);
+        EmbeddingProcessor processor = processor(new FakeAIOrchestrator(), store);
         Document doc = new Document("http://example.onion", "tor", "<html></html>", "some content", DocumentType.HTML);
 
         ProcessingResult result = processor.process(doc);
@@ -116,7 +153,7 @@ class EmbeddingProcessorTest {
 
     @Test
     void supportsOnlyHtml() {
-        EmbeddingProcessor processor = new EmbeddingProcessor(new FakeAIOrchestrator(), new FakeVectorStore(), CHUNK_SIZE_TOKENS, OVERLAP_PERCENT);
+        EmbeddingProcessor processor = processor(new FakeAIOrchestrator(), new FakeVectorStore());
 
         assertThat(processor.supports(DocumentType.HTML)).isTrue();
         assertThat(processor.supports(DocumentType.PDF)).isFalse();
@@ -125,7 +162,7 @@ class EmbeddingProcessorTest {
 
     @Test
     void runsAfterSanitizerInPipelineOrder() {
-        EmbeddingProcessor processor = new EmbeddingProcessor(new FakeAIOrchestrator(), new FakeVectorStore(), CHUNK_SIZE_TOKENS, OVERLAP_PERCENT);
+        EmbeddingProcessor processor = processor(new FakeAIOrchestrator(), new FakeVectorStore());
 
         assertThat(processor.order()).isEqualTo(100);
     }
@@ -166,6 +203,24 @@ class EmbeddingProcessorTest {
                 throw new RuntimeException("simulated failure");
             }
             return new Embedding(new float[]{0.1f, 0.2f, 0.3f}, 1.0);
+        }
+
+        int batchCalls = 0;
+        List<String> lastTexts = List.of();
+        String lastTitle;
+        TaskContext lastCtx;
+
+        /** One batch, failing as a whole like GeminiEmbedder does. */
+        @Override
+        public List<Embedding> embedAll(List<String> texts, String title, TaskContext ctx) {
+            batchCalls++;
+            lastTexts = texts;
+            lastTitle = title;
+            lastCtx = ctx;
+            if (failOnCall >= 0) {
+                throw new RuntimeException("simulated failure");
+            }
+            return texts.stream().map(t -> new Embedding(new float[]{0.1f, 0.2f, 0.3f}, 1.0)).toList();
         }
     }
 

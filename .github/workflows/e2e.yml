@@ -5,7 +5,7 @@ on:
 
 jobs:
   # Fases 1-3 end to end: real crawler image -> Redpanda -> core -> Qdrant/AI, with Tor,
-  # the .onion sites and Ollama faked by crawler/cmd/e2e-fakes. Same script as locally.
+  # the .onion sites and the AI providers (Gemini, DeepSeek) faked by crawler/cmd/e2e-fakes. Same script as locally.
   e2e-smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 20

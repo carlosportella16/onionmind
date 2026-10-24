@@ -6,6 +6,10 @@ crawler:
   circuit_breaker:
     consecutive_failures: 3
     timeout: 30s
+  max_links_per_page: 2000
+  # MD5s of banned hosts (ahmia /banned/ format), relative to this file. The repo ships an
+  # empty placeholder; populate it at deploy (README, "Denylist de hosts do crawler").
+  host_denylist_path: "denylist/banned-hosts.md5"
 
 tor:
   socks_addr: "tor:9050"

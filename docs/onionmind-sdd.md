@@ -500,6 +500,13 @@ public record ProcessingResult(
 
 ### 7.2 AIOrchestrator — interface e decorator chain
 
+> **Nota de substituição (2026-10-24, `replace-ollama-with-gemini-deepseek`):** os provedores desta seção são os do plano original. O Ollama e o Groq saíram:
+> - a geração usa `gemini-3.5-flash-lite` (pago, thinking `minimal`) e, como último degrau, `deepseek-flash`, numa escada única `ai.ladder`, sem LOCAL_FIRST/CLOUD_FIRST e sem fallback local;
+> - os embeddings usam `gemini-embedding-2` (768 dimensões, em lote, coleção `page_chunks_v2`);
+> - falta de cota não gasta tentativas.
+>
+> O desenho atual está em `onionmind-master-sdd.md` (ADR-006, seções 6.3 e 12).
+
 **Interface pública (o que os processors enxergam):**
 
 ```java
@@ -619,6 +626,13 @@ CompletionResponse execute(CompletionRequest req, TaskContext ctx) {
 
 ### 7.3 AI Cost Optimizer — roteamento por custo e complexidade
 
+> **Nota de substituição (2026-10-24, `replace-ollama-with-gemini-deepseek`):** os provedores desta seção são os do plano original. O Ollama e o Groq saíram:
+> - a geração usa `gemini-3.5-flash-lite` (pago, thinking `minimal`) e, como último degrau, `deepseek-flash`, numa escada única `ai.ladder`, sem LOCAL_FIRST/CLOUD_FIRST e sem fallback local;
+> - os embeddings usam `gemini-embedding-2` (768 dimensões, em lote, coleção `page_chunks_v2`);
+> - falta de cota não gasta tentativas.
+>
+> O desenho atual está em `onionmind-master-sdd.md` (ADR-006, seções 6.3 e 12).
+
 Regras simples na Fase 3 (não ML):
 
 - Texto curto (< 500 tokens), classificação simples → **Ollama** (local, grátis, sem fila)
@@ -693,6 +707,13 @@ Cada documento carrega `content_hash` (hash do conteúdo normalizado, sem boiler
 ---
 
 ## 9. Estratégia de LLM gratuito por fase
+
+> **Nota de substituição (2026-10-24, `replace-ollama-with-gemini-deepseek`):** os provedores desta seção são os do plano original. O Ollama e o Groq saíram:
+> - a geração usa `gemini-3.5-flash-lite` (pago, thinking `minimal`) e, como último degrau, `deepseek-flash`, numa escada única `ai.ladder`, sem LOCAL_FIRST/CLOUD_FIRST e sem fallback local;
+> - os embeddings usam `gemini-embedding-2` (768 dimensões, em lote, coleção `page_chunks_v2`);
+> - falta de cota não gasta tentativas.
+>
+> O desenho atual está em `onionmind-master-sdd.md` (ADR-006, seções 6.3 e 12).
 
 | Fase | Uso | Provedor | Observação |
 |------|-----|----------|------------|

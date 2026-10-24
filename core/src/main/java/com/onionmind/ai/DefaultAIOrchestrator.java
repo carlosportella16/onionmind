@@ -19,20 +19,24 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectReader;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * The real Fase 3 orchestrator (SDD sec. 7.2). {@code summarize}/{@code classify}/{@code translate}
  * run: cache → escalation loop (router → retry → provider → validate). A low-confidence
- * result after the last escalation is returned, not thrown — only a total transport
- * failure throws {@link AllProvidersExhaustedException}. {@code embed} bypasses all of
- * this — one provider, deterministic.
+ * result after the last escalation is returned, not thrown — only a total failure throws
+ * {@link AllProvidersExhaustedException}, flagged quota-only when no provider had quota.
+ * {@code embed}/{@code embedAll} bypass all of this — one provider (Gemini), deterministic.
  */
 @Component
 @ConditionalOnExpression("${ai.enabled:false}")
 public class DefaultAIOrchestrator implements AIOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultAIOrchestrator.class);
+    // Token estimate before the call and when the provider reports no usage (ai-token-quota D2).
+    private static final int CHARS_PER_TOKEN = 4;
 
     private final CostOptimizerRouter router;
     private final ProviderQuotaTracker quotaTracker;
@@ -40,7 +44,7 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
     private final ValidationDecorator validator;
     private final CacheDecorator cache;
     private final MetricsDecorator metrics;
-    private final OllamaEmbedder embedder;
+    private final GeminiEmbedder embedder;
     private final double minConfidence;
     private final int maxEscalations;
 
@@ -70,7 +74,7 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
                                  ValidationDecorator validator,
                                  CacheDecorator cache,
                                  MetricsDecorator metrics,
-                                 OllamaEmbedder embedder,
+                                 GeminiEmbedder embedder,
                                  @Value("${ai.min-confidence:0.7}") double minConfidence,
                                  @Value("${ai.max-escalations:2}") int maxEscalations) {
         this.router = router;
@@ -131,7 +135,12 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
 
     @Override
     public Embedding embed(String text, TaskContext ctx) {
-        return embedder.embed(text);
+        return embedder.embed(List.of(text), null, ctx.interactive()).getFirst();
+    }
+
+    @Override
+    public List<Embedding> embedAll(List<String> texts, String title, TaskContext ctx) {
+        return embedder.embed(texts, title, ctx.interactive());
     }
 
     private ValidatedResult execute(CompletionRequest request, TaskContext ctx) {
@@ -144,21 +153,33 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
         ValidatedResult best = null;
         ProviderException lastError = null;
         TaskContext current = ctx;
+        Set<String> tried = new HashSet<>();
+        boolean quotaOnly = true; // until some provider actually answers or fails for another reason
+        long promptChars = length(request.systemPrompt()) + length(request.userPrompt());
 
         for (int attempt = 0; attempt <= maxEscalations; attempt++) {
-            AIProvider provider = router.select(current.withAttempt(attempt));
+            AIProvider provider;
+            try {
+                provider = router.select(current.withAttempt(attempt), tried, promptChars / CHARS_PER_TOKEN);
+            } catch (AllProvidersExhaustedException e) {
+                break; // nothing left with quota: settle with what we have
+            }
+            tried.add(provider.id());
             ValidatedResult validated;
             try {
                 CompletionResponse raw = metrics.timed(ctx.type(), provider.id(),
                     () -> retry.execute(() -> provider.complete(request)));
-                quotaTracker.recordUsage(provider.id());
+                quotaTracker.recordUsage(provider.id(), raw.totalTokens() != null
+                    ? raw.totalTokens() : (promptChars + length(raw.text())) / CHARS_PER_TOKEN);
                 validated = validator.validate(raw, ctx.type());
             } catch (ProviderException e) {
                 lastError = e;
+                quotaOnly &= e.rateLimited();
                 metrics.recordOutcome(provider.id(), ctx.type(), "transient_fail");
                 log.warn("AI provider {} failed for {}: {}", provider.id(), ctx.type(), e.getMessage());
                 continue;
             }
+            quotaOnly = false;
 
             metrics.recordConfidence(ctx.type(), validated.confidence());
             if (best == null || validated.confidence() > best.confidence()) {
@@ -178,7 +199,13 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
             return best;
         }
 
-        metrics.recordOutcome("none", ctx.type(), "exhausted");
-        throw new AllProvidersExhaustedException("all providers failed for " + ctx.type(), lastError);
+        metrics.recordOutcome("none", ctx.type(), quotaOnly ? "no_quota" : "exhausted");
+        throw new AllProvidersExhaustedException(
+            (quotaOnly ? "no AI provider with quota for " : "all providers failed for ") + ctx.type(),
+            quotaOnly, lastError);
+    }
+
+    private static long length(String text) {
+        return text == null ? 0 : text.length();
     }
 }

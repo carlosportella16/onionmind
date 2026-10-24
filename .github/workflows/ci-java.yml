@@ -15,7 +15,7 @@ jobs:
 
       - name: Run tests with coverage
         working-directory: core
-        run: ./gradlew clean test jacocoTestReport -q
+        run: ./gradlew clean test jacocoTestReport  # no -q: it hides the names of failed tests
 
       - name: Check coverage threshold
         working-directory: core
@@ -33,7 +33,7 @@ jobs:
 
   # The Cucumber acceptance suite already runs inside `test` above. This job boots the real
   # app against real Postgres/Kafka/Redis and runs the GET-only @smoke scenarios against it.
-  # No Ollama/Qdrant/Neo4j on the runner, so @semantic and @grafo are excluded; ai.enabled=true still exposes
+  # No Qdrant/Neo4j nor AI keys on the runner, so @semantic and @grafo are excluded; ai.enabled=true still exposes
   # the AI metrics @ia checks (no API keys needed — no page gets enriched).
   smoke:
     needs: ci-java

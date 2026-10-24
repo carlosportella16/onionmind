@@ -324,7 +324,7 @@ echo "==> módulo ai (Spring Modulith) — específico do OnionMind"
 cat > core/src/main/java/com/onionmind/ai/package-info.java << 'EOF'
 /**
  * Abstração sobre provedores de IA — AIOrchestrator (SDD seção 7.2).
- * Implementação real (Ollama/Groq/Gemini + decorator chain) chega na Fase 3.
+ * Implementação real (Gemini/DeepSeek + decorator chain) chega na Fase 3.
  */
 @org.springframework.modulith.ApplicationModule
 package com.onionmind.ai;

@@ -10,6 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FakeAiProvidersTest {
 
     private static final double MIN_SCORE = 0.45;
+    private static final String GENERATE = "/models/gemini-3.5-flash-lite:generateContent";
 
     @Test
     void paraphraseOfSameConceptScoresAboveMinScore() {
@@ -40,9 +41,28 @@ class FakeAiProvidersTest {
     }
 
     @Test
+    void batchEmbedAnswersOneVectorPerRequestInOrderIgnoringTheRolePrefix() throws Exception {
+        try (FakeAiProviders fakes = new FakeAiProviders()) {
+            String body = fakes.gemini.responder.apply("/models/gemini-embedding-2:batchEmbedContents", """
+                {"requests": [
+                  {"content": {"parts": [{"text": "task: search result | query: criptomoedas"}]}},
+                  {"content": {"parts": [{"text": "title: http://x.onion/ | text: vazamento de senhas"}]}}]}
+                """).body();
+
+            var embeddings = tools.jackson.databind.json.JsonMapper.builder().build().readTree(body).path("embeddings");
+            assertThat(embeddings.size()).isEqualTo(2);
+            assertThat(embeddings.get(0).path("values").size()).isEqualTo(FakeAiProviders.DIMENSIONS);
+            assertThat(embeddings.get(0).path("values").get(0).asDouble())
+                .isCloseTo(embed("criptomoedas")[0], org.assertj.core.data.Offset.offset(1e-6));
+            assertThat(FakeAiProviders.stripRole("title: http://x.onion/ | text: vazamento"))
+                .isEqualTo("vazamento");
+        }
+    }
+
+    @Test
     void entityPromptReturnsOnlyTheKnownNamesPresentInTheText() throws Exception {
         try (FakeAiProviders fakes = new FakeAiProviders()) {
-            var reply = fakes.ollama.responder.apply("/api/generate",
+            var reply = fakes.gemini.responder.apply(GENERATE,
                 "{\"prompt\": \"Extract the named entities... Fale com Ana Souza hoje.\"}");
 
             assertThat(reply.body()).contains("Ana Souza", "person").doesNotContain("Mercado Sombrio");
@@ -52,9 +72,9 @@ class FakeAiProvidersTest {
     @Test
     void marketplacesAreClassifiedByName() throws Exception {
         try (FakeAiProviders fakes = new FakeAiProviders()) {
-            assertThat(fakes.ollama.responder.apply("/api/generate", "{\"prompt\": \"Classify the page: Mercado X\"}").body())
+            assertThat(fakes.gemini.responder.apply(GENERATE, "{\"prompt\": \"Classify the page: Mercado X\"}").body())
                 .contains("marketplace");
-            assertThat(fakes.ollama.responder.apply("/api/generate", "{\"prompt\": \"Classify the page: um blog\"}").body())
+            assertThat(fakes.gemini.responder.apply(GENERATE, "{\"prompt\": \"Classify the page: um blog\"}").body())
                 .contains("forum");
         }
     }
@@ -62,15 +82,15 @@ class FakeAiProvidersTest {
     @Test
     void englishPromptsGetEnglishSummariesAndDoNotSkewLanguageDetection() throws Exception {
         try (FakeAiProviders fakes = new FakeAiProviders()) {
-            assertThat(fakes.ollama.responder.apply("/api/generate",
+            assertThat(fakes.gemini.responder.apply(GENERATE,
                 "{\"system\": \"Identify the predominant language of this text.\", \"prompt\": \"um texto curto\"}")
                 .body()).contains("\\\"pt\\\"");
-            assertThat(fakes.ollama.responder.apply("/api/generate",
+            assertThat(fakes.gemini.responder.apply(GENERATE,
                 "{\"system\": \"Identify the predominant language of this text.\", \"prompt\": \"on the network\"}")
                 .body()).contains("\\\"en\\\"");
-            assertThat(fakes.ollama.responder.apply("/api/generate",
+            assertThat(fakes.gemini.responder.apply(GENERATE,
                 "{\"system\": \"You summarize web pages in English.\", \"prompt\": \"texto\"}").body())
-                .contains("Automatic summary (ollama) of the page.");
+                .contains("Automatic summary (gemini) of the page.");
         }
     }
 }

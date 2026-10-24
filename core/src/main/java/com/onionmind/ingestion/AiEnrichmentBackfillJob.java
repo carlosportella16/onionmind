@@ -26,7 +26,9 @@ import java.util.List;
  * so the content_hash gate and the cost optimizer apply here too. A complete enrichment
  * publishes {@link PageEnrichedEvent} (Fase 4, ADR-009). A page that fails
  * {@code ai.backfill.max-attempts} times goes {@code failed_permanent} and leaves the queue,
- * like {@code ChangeSummaryJob} does for change summaries.
+ * like {@code ChangeSummaryJob} does for change summaries. Running out of quota is not a
+ * failure: the page stays queued with its attempts untouched and the run stops there
+ * (replace-ollama-with-gemini-deepseek D4).
  */
 @Component
 @ConditionalOnProperty(prefix = "ai", name = "enabled", havingValue = "true")
@@ -79,17 +81,24 @@ public class AiEnrichmentBackfillJob {
         }
         log.info("AI enrichment backfill: processing {} page(s)", pending.size());
         for (PendingPage page : pending) {
-            enrichOne(page);
+            if (!enrichOne(page)) {
+                log.info("AI enrichment backfill: no provider has quota, {} stays queued for the next run", page.url());
+                return; // the rest of the batch would wait too — don't walk it
+            }
         }
     }
 
-    private void enrichOne(PendingPage page) {
+    /** False when a step found no provider with quota: the page is left as it was, attempts untouched. */
+    private boolean enrichOne(PendingPage page) {
         Document doc = new Document(page.url(), page.sourceType(), null, page.extractedText(), DocumentType.HTML);
         boolean failed = false;
 
         for (AiEnrichingProcessor processor : processors) {
             if (!processor.supports(doc.type())) continue;
             ProcessingResult result = processor.process(doc);
+            if (result.status() == ProcessingResult.Status.WAITING) {
+                return false;
+            }
             if (result.status() == ProcessingResult.Status.FAILED) {
                 failed = true; // a failed step may still carry partial output (EntityProcessor)
             }
@@ -119,6 +128,7 @@ public class AiEnrichmentBackfillJob {
                 events.publishEvent(enrichedEvent(page, enrichment));
             }
         });
+        return true;
     }
 
     private static PageEnrichedEvent enrichedEvent(PendingPage page, Enrichment enrichment) {

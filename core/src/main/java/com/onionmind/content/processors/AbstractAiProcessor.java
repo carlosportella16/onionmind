@@ -1,6 +1,7 @@
 package com.onionmind.content.processors;
 
 import com.onionmind.ai.AIOrchestrator;
+import com.onionmind.ai.AllProvidersExhaustedException;
 import com.onionmind.content.AiEnrichingProcessor;
 import com.onionmind.content.AiEnrichmentGate;
 import com.onionmind.content.Document;
@@ -13,9 +14,11 @@ import org.slf4j.LoggerFactory;
  * Shared shape for the order 10-40 AI processors: HTML only, skip when there is no text,
  * honour the content_hash gate (don't spend quota on unchanged pages), and never let an
  * AI failure abort the pipeline — a failed step returns FAILED and the page is persisted
- * with whatever the earlier steps produced (fase3-sdd 7.6). The text handed to {@link #enrich}
- * is capped at {@code maxInputChars}, so a 2 MB page never reaches the LLM whole
- * (fix-real-infra-findings D1); {@code document.extractedText()} still has all of it.
+ * with whatever the earlier steps produced (fase3-sdd 7.6). No provider with quota is not a
+ * failure: the step returns WAITING and the backfill leaves the page for its next run. The
+ * text handed to {@link #enrich} is capped at {@code maxInputChars}, so a 2 MB page never
+ * reaches the LLM whole (fix-real-infra-findings D1); {@code document.extractedText()} still
+ * has all of it.
  */
 abstract class AbstractAiProcessor implements AiEnrichingProcessor {
 
@@ -41,12 +44,16 @@ abstract class AbstractAiProcessor implements AiEnrichingProcessor {
         }
         try {
             return ProcessingResult.success(enrich(document, cap(text)));
-        } catch (PartialFailure e) {
-            log.warn("{} partially failed for {}: {}", getClass().getSimpleName(), document.url(), e.getMessage());
-            return ProcessingResult.failed(e.partial, getClass().getSimpleName() + ": " + e.getMessage());
         } catch (RuntimeException e) {
-            log.warn("{} failed for {}: {}", getClass().getSimpleName(), document.url(), e.getMessage());
-            return ProcessingResult.failed(document, getClass().getSimpleName() + ": " + e.getMessage());
+            String error = getClass().getSimpleName() + ": " + e.getMessage();
+            if (AllProvidersExhaustedException.isQuotaOnly(e)) {
+                // no provider had quota: a state to wait out, not a failure — nothing partial is kept
+                return ProcessingResult.waiting(document, error);
+            }
+            boolean partial = e instanceof PartialFailure;
+            log.warn("{} {} for {}: {}", getClass().getSimpleName(), partial ? "partially failed" : "failed",
+                document.url(), e.getMessage());
+            return ProcessingResult.failed(partial ? ((PartialFailure) e).partial : document, error);
         }
     }
 

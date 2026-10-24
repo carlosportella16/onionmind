@@ -1,9 +1,60 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestLoadResolvesDenylistAndDefaultsLinksCap(t *testing.T) {
+	cfg, err := Load("../../config.yaml")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Crawler.MaxLinksPerPage != 2000 {
+		t.Errorf("MaxLinksPerPage = %d, want 2000", cfg.Crawler.MaxLinksPerPage)
+	}
+	if want := filepath.Join("..", "..", "denylist", "banned-hosts.md5"); cfg.Crawler.HostDenylistPath != want {
+		t.Errorf("HostDenylistPath = %q, want %q (relative to the config file)", cfg.Crawler.HostDenylistPath, want)
+	}
+
+	path := writeConfig(t, "crawler:\n  workers: 1\n  host_denylist_path: \"banned.md5\"\n")
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "banned.md5"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, err = Load(path); err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Crawler.MaxLinksPerPage != 2000 {
+		t.Errorf("unset MaxLinksPerPage = %d, want default 2000", cfg.Crawler.MaxLinksPerPage)
+	}
+}
+
+func TestLoadFailsWithoutDenylistFile(t *testing.T) {
+	cases := []struct{ name, yaml, inErr string }{
+		{"missing path", "crawler:\n  host_denylist_path: \"does-not-exist.md5\"\n", "does-not-exist.md5"},
+		{"unset path", "crawler:\n  workers: 1\n", "host_denylist_path"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := Load(writeConfig(t, c.yaml))
+			if err == nil || !strings.Contains(err.Error(), c.inErr) {
+				t.Fatalf("expected an error containing %q, got %v", c.inErr, err)
+			}
+		})
+	}
+}
+
+func writeConfig(t *testing.T, yaml string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
 
 func TestLoadParsesExampleConfig(t *testing.T) {
 	cfg, err := Load("../../config.yaml")

@@ -1,6 +1,7 @@
 package com.onionmind.intelligence;
 
 import com.onionmind.ai.AIOrchestrator;
+import com.onionmind.ai.AllProvidersExhaustedException;
 import com.onionmind.ai.Summary;
 import com.onionmind.ai.TaskContext;
 import org.slf4j.Logger;
@@ -20,7 +21,8 @@ import java.util.stream.Collectors;
 /**
  * Summarizes non-trivial changes with the existing summarize operation (fase3-sdd 13). No
  * transaction around the LLM call — same rule as the AI backfill (fix-ingestion-stability):
- * a slow provider must never hold a DB connection.
+ * a slow provider must never hold a DB connection. No provider with quota is not a failure:
+ * the change keeps its attempts and the run stops (replace-ollama-with-gemini-deepseek D4).
  */
 @Component
 @ConditionalOnProperty(prefix = "ai", name = "enabled", havingValue = "true")
@@ -59,11 +61,15 @@ public class ChangeSummaryJob {
             rs.getString("category_to"), rs.getInt("attempts")), batchSize);
 
         for (PendingChange change : pending) {
-            summarize(change);
+            if (!summarize(change)) {
+                log.info("Change summaries: no AI provider has quota, the rest waits for the next run");
+                return;
+            }
         }
     }
 
-    private void summarize(PendingChange change) {
+    /** False when no provider had quota: the change keeps its status and attempts for the next run. */
+    private boolean summarize(PendingChange change) {
         String text = describe(change);
         try {
             Summary summary = orchestrator.summarize(text,
@@ -72,10 +78,14 @@ public class ChangeSummaryJob {
                 mapper.writeValueAsString(Map.of("text", summary.text(), "confidence", summary.confidence())),
                 change.id());
         } catch (RuntimeException e) {
+            if (AllProvidersExhaustedException.isQuotaOnly(e)) {
+                return false;
+            }
             String status = change.attempts() + 1 >= maxAttempts ? "failed_permanent" : "failed_transient";
             log.warn("Change summary for {} v{} failed ({}): {}", change.url(), change.toVersion(), status, e.getMessage());
             jdbc.update("UPDATE page_changes SET status = ?, attempts = attempts + 1 WHERE id = ?", status, change.id());
         }
+        return true;
     }
 
     /** What the summarizer reads: a structured description of the diff, not the page. */

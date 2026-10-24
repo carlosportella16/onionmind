@@ -12,7 +12,6 @@ import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 
@@ -89,7 +88,7 @@ public class PageRepository {
     }
 
     /**
-     * Writes the enrichment (summary/category/language/translation/entities JSONB + ai_status).
+     * Writes the enrichment (summary/category/language/entities JSONB + ai_status).
      * Any status other than 'processed' counts one more failed attempt in {@code ai_attempts}.
      */
     public void updateAiFields(String url, AiOutcome outcome) {
@@ -110,12 +109,12 @@ public class PageRepository {
         Enrichment e = outcome.enrichment();
         return jdbc.update("""
             UPDATE pages
-            SET summary = ?::jsonb, category = ?::jsonb, language = ?::jsonb, translated_text = ?::jsonb,
+            SET summary = ?::jsonb, category = ?::jsonb, language = ?::jsonb,
                 entities = ?::jsonb, ai_status = ?, ai_processed_at = now(), ai_error_message = ?,
                 ai_attempts = ai_attempts + CASE WHEN ?::text = 'processed' THEN 0 ELSE 1 END
             WHERE url = ? AND (?::text IS NULL OR content_hash = ?)
             """,
-            summaryJson(e), categoryJson(e), languageJson(e), translationJson(e), entitiesJson(e),
+            summaryJson(e), categoryJson(e), languageJson(e), entitiesJson(e),
             outcome.status(), outcome.errorMessage(), outcome.status(), url, contentHash, contentHash);
     }
 
@@ -142,17 +141,6 @@ public class PageRepository {
     private String languageJson(Enrichment e) {
         return e.language() == null ? null
             : json(Map.of("code", e.language().code(), "confidence", e.language().confidence()));
-    }
-
-    private String translationJson(Enrichment e) {
-        if (e.translation() == null) {
-            return null;
-        }
-        Map<String, Object> map = new HashMap<>();
-        map.put("text", e.translation().text());
-        map.put("detectedLanguage", e.translation().detectedLanguage());
-        map.put("confidence", e.translation().confidence());
-        return json(map);
     }
 
     private String json(Map<String, ?> map) {

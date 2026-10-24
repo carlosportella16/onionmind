@@ -7,7 +7,6 @@ import com.onionmind.content.ContentProcessor;
 import com.onionmind.content.Document;
 import com.onionmind.content.DocumentType;
 import com.onionmind.content.Enrichment;
-import com.onionmind.content.Enrichment.LanguageTag;
 import com.onionmind.content.ProcessingResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestInstance;
@@ -54,14 +53,12 @@ class AiProcessorContractTest {
         + "grault garply waldo fred plugh xyzzy thud spam ham eggs";
 
     Stream<Arguments> aiProcessors() {
-        return processorsFor(AMBIGUOUS, "english body text", "some body text");
+        return processorsFor(AMBIGUOUS, "some body text");
     }
 
-    private Stream<Arguments> processorsFor(String ambiguous, String english, String body) {
+    private Stream<Arguments> processorsFor(String ambiguous, String body) {
         return Stream.of(
             arguments("language", new LanguageDetectorProcessor(failing, gate, CAP), doc(ambiguous, Enrichment.EMPTY)),
-            arguments("translation", new TranslationProcessor(failing, gate, CAP),
-                doc(english, Enrichment.EMPTY.withLanguage(new LanguageTag("en", 0.9)))),
             arguments("summary", new SummarizerProcessor(failing, gate, CAP), doc(body, Enrichment.EMPTY)),
             arguments("classifier", new ClassifierProcessor(failing, gate, CAP), doc(body, Enrichment.EMPTY)));
     }
@@ -71,7 +68,7 @@ class AiProcessorContractTest {
         + " TAIL-MARKER " + "y".repeat(20_000 - CAP - 13);
 
     Stream<Arguments> hugeInputs() {
-        return processorsFor(HUGE, HUGE, HUGE);
+        return processorsFor(HUGE, HUGE);
     }
 
     @ParameterizedTest(name = "{0}")

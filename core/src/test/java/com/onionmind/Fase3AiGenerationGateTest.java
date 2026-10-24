@@ -29,14 +29,15 @@ import org.testcontainers.kafka.KafkaContainer;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 /**
- * Fase 3 exit gate (fase3-sdd sec. 12): a new page is automatically summarized, classified
- * and (when not Portuguese) translated within minutes, the provider chosen without any
- * manual step. Uses a fake AIProvider surface (the @Primary AIOrchestrator) for CI
+ * Fase 3 exit gate (fase3-sdd sec. 12): a new page is automatically summarized and
+ * classified, with an English summary, within minutes, the provider chosen without any
+ * manual step. Enrichment never translates the page (remove-page-translation). Uses a fake AIProvider surface (the @Primary AIOrchestrator) for CI
  * determinism — same approach as Fase2SemanticSearchGateTest. Redis-backed beans are
  * mocked so the test needs only Postgres + Kafka.
  */
@@ -60,6 +61,7 @@ class Fase3AiGenerationGateTest {
 
     @BeforeEach
     void setUp() {
+        FakeAi.translateCalls.set(0);
         jdbc.update("DELETE FROM page_versions");
         jdbc.update("DELETE FROM pages");
         producer = new KafkaProducer<>(
@@ -94,27 +96,27 @@ class Fase3AiGenerationGateTest {
                 .isEqualTo("processed"));
         return jdbc.queryForMap("""
             SELECT summary->>'text' AS summary, category->>'category' AS category,
-                   language->>'code' AS language, translated_text->>'text' AS translation
+                   language->>'code' AS language
             FROM pages WHERE url = ?
             """, url);
     }
 
     @Test
-    void foreignPageIsSummarizedClassifiedAndTranslated() throws Exception {
+    void englishPageIsSummarizedAndClassifiedWithoutTranslation() throws Exception {
         String url = "http://en-" + System.nanoTime() + ".onion/";
         publish(url, "<html><body><p>This English marketplace and forum discusses the anonymous "
             + "trading of digital goods and the privacy tools that people use on the network every day.</p></body></html>");
 
         Map<String, Object> row = awaitEnriched(url);
 
-        assertThat(row.get("summary")).asString().contains("resumo");
+        assertThat(row.get("summary")).asString().contains("summary");
         assertThat(row).containsEntry("category", "forum");
         assertThat(row).containsEntry("language", "en");
-        assertThat(row.get("translation")).asString().contains("traducao");
+        assertThat(FakeAi.translateCalls).hasValue(0);
     }
 
     @Test
-    void portuguesePageIsSummarizedAndClassifiedButNotTranslated() throws Exception {
+    void portuguesePageGetsAnEnglishSummaryWithoutTranslation() throws Exception {
         String url = "http://pt-" + System.nanoTime() + ".onion/";
         publish(url, "<html><body><p>Este forum em portugues discute a privacidade e a troca de bens "
             + "digitais entre os usuarios que nao revelam a identidade para mais ninguem, com dicas de "
@@ -122,14 +124,17 @@ class Fase3AiGenerationGateTest {
 
         Map<String, Object> row = awaitEnriched(url);
 
-        assertThat(row.get("summary")).asString().contains("resumo");
+        assertThat(row.get("summary")).asString().contains("summary");
         assertThat(row).containsEntry("category", "forum");
         assertThat(row).containsEntry("language", "pt");
-        assertThat(row.get("translation")).isNull();
+        assertThat(FakeAi.translateCalls).as("no TRANSLATE call during enrichment").hasValue(0);
     }
 
     @TestConfiguration
     static class FakeAi {
+
+        /** {@code translate} stays on the AI surface (bilingual-search backlog), not in enrichment. */
+        static final AtomicInteger translateCalls = new AtomicInteger();
 
         @Bean
         @Primary
@@ -137,7 +142,7 @@ class Fase3AiGenerationGateTest {
             return new AIOrchestrator() {
                 @Override
                 public Summary summarize(String text, TaskContext ctx) {
-                    return new Summary("resumo automatico da pagina", 0.9);
+                    return new Summary("Automatic summary of the page.", 0.9);
                 }
 
                 @Override
@@ -147,7 +152,8 @@ class Fase3AiGenerationGateTest {
 
                 @Override
                 public Translation translate(String text, String targetLang, TaskContext ctx) {
-                    return new Translation("traducao para portugues", "en", 0.9);
+                    translateCalls.incrementAndGet();
+                    return new Translation(text, "pt", 0.9);
                 }
 
                 @Override

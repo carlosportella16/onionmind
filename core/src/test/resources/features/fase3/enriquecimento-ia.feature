@@ -1,8 +1,8 @@
 # language: pt
 Funcionalidade: Fase 3 — enriquecimento por IA
-  Páginas novas ganham resumo, categoria, idioma e (se não forem em português)
-  tradução, com o provedor de IA escolhido automaticamente. Conteúdo barrado
-  vai para quarentena antes de qualquer modelo tocá-lo.
+  Páginas novas ganham resumo em inglês, categoria e idioma, sem tradução, com o
+  provedor de IA escolhido automaticamente. Conteúdo barrado vai para quarentena
+  antes de qualquer modelo tocá-lo.
 
   Cenário: Página nova em português é enriquecida
     Dado que a página "http://forum-pt.onion/" foi publicada com o texto "Este fórum em português discute a privacidade e a troca de bens digitais entre os usuários que não revelam a identidade para mais ninguém."
@@ -10,15 +10,15 @@ Funcionalidade: Fase 3 — enriquecimento por IA
     Então a página "http://forum-pt.onion/" está com status de IA "processed"
     E a página "http://forum-pt.onion/" tem resumo, categoria e idioma preenchidos
     E o idioma da página "http://forum-pt.onion/" é "pt"
-    E a página "http://forum-pt.onion/" não tem tradução
 
-  Cenário: Página em inglês é traduzida sem perder o original
-    Dado que a página "http://forum-en.onion/" foi publicada com o texto "This English forum discusses the anonymous trading of digital goods and the privacy tools that people use on the network every day."
+  Cenário: Página em português ganha resumo em inglês sem tradução
+    Dado que a página "http://mercado-pt.onion/" foi publicada com o texto "Este mercado em português vende bens digitais e explica para os usuários como manter a privacidade e a identidade longe de todos que não querem ser vistos na rede."
     Quando o ciclo de enriquecimento roda
-    Então a página "http://forum-en.onion/" está com status de IA "processed"
-    E o idioma da página "http://forum-en.onion/" é "en"
-    E a página "http://forum-en.onion/" tem tradução preenchida
-    E o texto original da página "http://forum-en.onion/" continua contendo "This English forum"
+    Então a página "http://mercado-pt.onion/" está com status de IA "processed"
+    E o idioma da página "http://mercado-pt.onion/" é "pt"
+    E o modelo recebeu o pedido de resumo em inglês com o texto original da página "http://mercado-pt.onion/"
+    E nenhuma tradução foi pedida ao modelo
+    E o texto original da página "http://mercado-pt.onion/" continua contendo "Este mercado em português"
 
   Cenário: Categoria fora da taxonomia não é persistida
     Dado que o modelo de IA responde a categoria "receitas culinárias"

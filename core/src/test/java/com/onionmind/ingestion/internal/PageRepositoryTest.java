@@ -3,7 +3,6 @@ package com.onionmind.ingestion.internal;
 import com.onionmind.TestcontainersConfiguration;
 import com.onionmind.ai.Classification;
 import com.onionmind.ai.Summary;
-import com.onionmind.ai.Translation;
 import com.onionmind.content.AiOutcome;
 import com.onionmind.content.Document;
 import com.onionmind.content.DocumentType;
@@ -89,7 +88,7 @@ class PageRepositoryTest {
             new EmbeddingOutcome(EmbeddingOutcome.EMBEDDED, null));
         repository.updateAiFields(url, AiOutcome.processed(new Enrichment(
             new LanguageTag("pt", 1.0), new Summary("resumo", 0.9),
-            new Classification("blog", 0.9), null)));
+            new Classification("blog", 0.9))));
 
         repository.upsertWithVersioning(doc(url, "version two, different content"));
 
@@ -227,15 +226,14 @@ class PageRepositoryTest {
         Enrichment enrichment = Enrichment.EMPTY
             .withLanguage(new LanguageTag("en", 0.97))
             .withSummary(new Summary("um resumo curto", 0.9))
-            .withCategory(new Classification("forum", 0.82))
-            .withTranslation(new Translation("o conteúdo da página", "en", 0.88));
+            .withCategory(new Classification("forum", 0.82));
 
         repository.updateAiFields(url, AiOutcome.processed(enrichment));
 
         var row = jdbc.queryForMap("""
             SELECT ai_status, ai_error_message,
                    summary->>'text' AS s, category->>'category' AS c,
-                   language->>'code' AS l, translated_text->>'text' AS t
+                   language->>'code' AS l
             FROM pages WHERE url = ?
             """, url);
         assertThat(row)
@@ -243,8 +241,7 @@ class PageRepositoryTest {
             .containsEntry("ai_error_message", null)
             .containsEntry("s", "um resumo curto")
             .containsEntry("c", "forum")
-            .containsEntry("l", "en")
-            .containsEntry("t", "o conteúdo da página");
+            .containsEntry("l", "en");
     }
 
     @Test

@@ -53,7 +53,6 @@ func TestOllamaHandlerSpeaksTheEmbedAndGenerateContracts(t *testing.T) {
 
 	tasks := map[string]string{
 		"Classify the page":                 "category",
-		"Translate the text":                "translation",
 		"Identify the predominant language": "language",
 		"You summarize web pages":           "summary",
 		"Extract the named entities":        "entities",

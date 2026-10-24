@@ -69,14 +69,17 @@ public class Fase3Steps {
         assertThat(page(url).get("language")).isEqualTo(language);
     }
 
-    @Então("a página {string} tem tradução preenchida")
-    public void assertTranslated(String url) {
-        assertThat(page(url).get("translation")).asString().isNotBlank();
+    /** The summary prompt is English and asks for English; the page text goes along untouched. */
+    @Então("o modelo recebeu o pedido de resumo em inglês com o texto original da página {string}")
+    public void assertEnglishSummaryPrompt(String url) {
+        String original = (String) page(url).get("extracted_text");
+        assertThat(generationBodies()).anySatisfy(body ->
+            assertThat(body).contains("You summarize web pages", "Respond in English", original));
     }
 
-    @Então("a página {string} não tem tradução")
-    public void assertNotTranslated(String url) {
-        assertThat(page(url).get("translation")).isNull();
+    @Então("nenhuma tradução foi pedida ao modelo")
+    public void assertNoTranslationRequested() {
+        assertThat(generationBodies()).noneMatch(body -> body.contains("Translate the text"));
     }
 
     @Então("o texto original da página {string} continua contendo {string}")
@@ -136,11 +139,16 @@ public class Fase3Steps {
         };
     }
 
+    private java.util.List<String> generationBodies() {
+        return java.util.stream.Stream.of(fakes.ollama, fakes.groq, fakes.gemini)
+            .flatMap(s -> s.requestBodies.stream()).toList();
+    }
+
     private Map<String, Object> page(String url) {
         return jdbc.queryForMap("""
             SELECT ai_status, extracted_text, raw_html,
                    summary->>'text' AS summary, category->>'category' AS category,
-                   language->>'code' AS language, translated_text->>'text' AS translation
+                   language->>'code' AS language
             FROM pages WHERE url = ?
             """, url);
     }

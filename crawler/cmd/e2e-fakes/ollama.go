@@ -70,8 +70,6 @@ func answer(prompt string) map[string]any {
 		return map[string]any{"entities": []any{}, "confidence": 0.9}
 	case strings.Contains(prompt, "Classify the page"):
 		return map[string]any{"category": "forum", "confidence": 0.9}
-	case strings.Contains(prompt, "Translate the text"):
-		return map[string]any{"translation": "Automatic translation.", "detectedLanguage": "en", "confidence": 0.9}
 	case strings.Contains(prompt, "Identify the predominant language"):
 		return map[string]any{"language": "pt", "confidence": 0.9}
 	default:

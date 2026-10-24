@@ -83,9 +83,6 @@ final class FakeAiProviders implements AutoCloseable {
             // Marketplaces are recognisable by name, so Fase 4 can mix categories in one scenario.
             payload = Map.of("category", requestBody.contains("Mercado") ? "marketplace" : categoryAnswer,
                 "confidence", 0.9);
-        } else if (requestBody.contains("Translate the text")) {
-            payload = Map.of("translation", "Automatic translation (" + provider + ").",
-                "detectedLanguage", "en", "confidence", 0.9);
         } else if (requestBody.contains("Identify the predominant language")) {
             // The prompt is English too: drop its marker so " the " can only come from the page.
             String page = requestBody.replace("Identify the predominant language", "");

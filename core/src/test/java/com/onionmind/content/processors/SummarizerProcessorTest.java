@@ -2,11 +2,11 @@ package com.onionmind.content.processors;
 
 import com.onionmind.ai.AIOrchestrator;
 import com.onionmind.ai.Summary;
-import com.onionmind.ai.Translation;
 import com.onionmind.content.AiEnrichmentGate;
 import com.onionmind.content.Document;
 import com.onionmind.content.DocumentType;
 import com.onionmind.content.Enrichment;
+import com.onionmind.content.Enrichment.LanguageTag;
 import com.onionmind.content.ProcessingResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -34,31 +35,30 @@ class SummarizerProcessorTest {
         processor = new SummarizerProcessor(orchestrator, gate, 8000);
     }
 
-    private Document doc() {
-        return new Document("http://x.onion", "tor", "<html>x</html>", "original english body", DocumentType.HTML);
+    private Document doc(String text, String language) {
+        return new Document("http://x.onion", "tor", "<html>x</html>", text, DocumentType.HTML)
+            .withEnrichment(Enrichment.EMPTY.withLanguage(new LanguageTag(language, 0.9)));
     }
 
     @Test
-    void summarizesOriginalTextWhenThereIsNoTranslation() {
+    void summarizesTheOriginalEnglishText() {
         when(orchestrator.summarize(eq("original english body"), any()))
-            .thenReturn(new Summary("resumo do conteúdo", 0.9));
+            .thenReturn(new Summary("A summary of the content.", 0.9));
 
-        ProcessingResult result = processor.process(doc());
+        ProcessingResult result = processor.process(doc("original english body", "en"));
 
-        assertThat(result.document().enrichment().summary().text()).isEqualTo("resumo do conteúdo");
+        assertThat(result.document().enrichment().summary().text()).isEqualTo("A summary of the content.");
         assertThat(result.document().enrichment().summary().confidence()).isEqualTo(0.9);
     }
 
     @Test
-    void summarizesTheTranslationWhenPresent() {
-        Document translated = doc().withEnrichment(
-            Enrichment.EMPTY.withTranslation(new Translation("corpo traduzido", "en", 0.9)));
-        when(orchestrator.summarize(eq("corpo traduzido"), any()))
-            .thenReturn(new Summary("resumo da tradução", 0.88));
+    void summarizesTheOriginalPortugueseTextUntranslated() {
+        when(orchestrator.summarize(eq("corpo original em português"), argThat(ctx -> "en".equals(ctx.sourceLanguage()))))
+            .thenReturn(new Summary("A summary of the Portuguese page.", 0.88));
 
-        ProcessingResult result = processor.process(translated);
+        ProcessingResult result = processor.process(doc("corpo original em português", "pt"));
 
-        assertThat(result.document().enrichment().summary().text()).isEqualTo("resumo da tradução");
+        assertThat(result.document().enrichment().summary().text()).isEqualTo("A summary of the Portuguese page.");
     }
 
     @Test

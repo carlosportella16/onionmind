@@ -88,6 +88,7 @@ Adds LLM-generated understanding without coupling to one provider or a paid acco
 - **Illegal-content guard** (order 5, before any model): URL/host denylist + audited text patterns; a match halts the pipeline, records an audit row and persists no content. Perceptual image hashing is a documented gap (no images are stored).
 - **Search:** `/api/search` results carry `summary` and `category` read straight from JSONB — no LLM on the query path.
 - **Backfill:** a scheduled job re-runs the enrichment processors for pages stuck at `pending` / `failed_transient`.
+- **Limits:** each LLM call gets at most `ai.max-input-chars` (default 8000) characters of page text (`entities.max-input-chars` for named entities), so 1–2 MB pages stop hitting provider length limits. The summary (and translation) of a page past that cap covers only its beginning; `extracted_text`, full-text search and the entity patterns still see the whole page. A page whose enrichment fails `ai.backfill.max-attempts` times (default 5, counted in `pages.ai_attempts`) goes `failed_permanent` and leaves the backfill queue and `ingestion.ai.lag`. A re-crawl with new content resets it to `pending` with zero attempts; to re-queue by hand: `UPDATE pages SET ai_status = 'pending', ai_attempts = 0 WHERE ai_status = 'failed_permanent' AND ...;`.
 
 Enable it with `ai.enabled=true` and the two API keys (below). With it off, the app behaves exactly as Phase 2.
 
@@ -120,10 +121,12 @@ cd onionmind
 
 # Start infrastructure — postgres, redpanda, redpanda-console, redis, tor,
 # ollama (pulls nomic-embed-text for embeddings + llama3.1:8b for generation),
-# qdrant (Phase 2+), neo4j (Phase 4)
+# qdrant (Phase 2+), neo4j (Phase 4). The tor image is built from tor/Dockerfile
+# (Alpine-packaged Tor); after pulling a change to it, run `docker compose build tor`.
 docker-compose up -d
 
-# Wait for services to report healthy — the two ollama-pull jobs run once and exit
+# Wait for services to report healthy — the two ollama-pull jobs run once and exit.
+# tor turns healthy only once its log reaches "Bootstrapped 100%"; start the crawler after that.
 docker compose ps
 
 # Build and test Java core

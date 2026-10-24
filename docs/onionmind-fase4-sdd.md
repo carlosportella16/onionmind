@@ -165,4 +165,16 @@ Verificação por mutação: o filtro trivial, a guarda de versão do grafo, o c
 
 **Limite aceito.** As versões v1 eram anteriores à Fase 4 e não tinham snapshot de enriquecimento. Por isso o diff dessas mudanças traz só o delta de texto, sem delta de entidades nem troca de categoria (`category_from` nulo), como o design D7 prevê.
 
-Itens 1–3 eram segue-adiante (não bloqueavam o gate, que foi atingido) e foram resolvidos no change `fix-real-infra-findings` (`openspec/changes/fix-real-infra-findings/`). O Tor novo foi validado de verdade: bootstrap a 100% em ~15 s sem o aviso de protocolos, e o crawler publicou as duas seeds (`ahmia.fi` e a `.onion`). O ciclo real de backfill com as páginas de 1 a 2 MB ainda não foi rodado (precisa de chaves e cota). Os itens 4–6 continuam em aberto.
+Itens 1–3 eram segue-adiante (não bloqueavam o gate, que foi atingido) e foram resolvidos no change `fix-real-infra-findings` (`openspec/changes/fix-real-infra-findings/`). O Tor novo foi validado de verdade: bootstrap a 100% em ~15 s sem o aviso de protocolos, e o crawler publicou as duas seeds (`ahmia.fi` e a `.onion`). O ciclo real de backfill com as páginas de 1 a 2 MB foi rodado em 2026-10-24 (seção 9.2). Os itens 4–6 continuam em aberto.
+
+### 9.2 Ciclo real dos fixes — 2026-10-24 (Tor real, Groq + Gemini reais, Ollama local; chaves de dev revogadas depois do teste)
+
+**Setup.** Compose com o Tor construído no repo, core com `ai.enabled`, `embedding.enabled` e `graph.enabled`, banco de dev do 9.1. No boot o Flyway aplicou a V8 (`ai_attempts`) e a V9 (drop de `translated_text`) no banco existente, sem erro. Crawl real de 5 min com 12 publicações; o crawler saiu com código 0 no SIGTERM.
+
+**Páginas de 1 a 2 MB.** As 4 páginas grandes (`ahmia.fi/onions/`, `/onions/`, `/banned/`, `/blacklist/banned/`, 1,17 a 1,98 MB) chegaram a `processed`, com idioma, categoria e resumo. Na 9.1 elas recebiam `HTTP 400 "reduce the length"` para sempre. O contador de tentativas funcionou: duas delas registraram `ai_attempts = 1` depois de uma falha transitória e terminaram `processed` na tentativa seguinte. Nenhuma chegou a `failed_permanent`, porque nenhuma falhou 5 vezes; esse caminho segue coberto por teste. Os resumos de `/banned/` dizem "No web page content was provided to summarize": o começo da página é só uma lista de hashes MD5, então o resumo está correto, e o limite de o resumo cobrir só o começo do texto já está documentado.
+
+**Achados novos.**
+
+7. **O cache de IA não muda quando o prompt muda.** O `CacheDecorator` usa a chave `(tarefa, sha256(texto))`, com TTL de 24 h. Depois da troca dos prompts para inglês, a primeira página reenfileirada voltou com o resumo **em português** de ontem, servido do Redis. Para o teste, as chaves `ai-cache:*` foram apagadas. Correção sugerida: uma versão de prompt na chave.
+8. **Com o Ollama em CPU, o backfill fica muito lento.** O roteador manda tarefas curtas primeiro ao Ollama (LOCAL_FIRST), e cada uma levava cerca de 90 s para falhar (timeout de 30 s mais os retries) antes de ir para a nuvem. Com `--ai.ollama.timeout=3s` a fila drenou em poucos minutos. O Groq devolveu 429 por TPM algumas vezes (item 4), e o Gemini assumiu (`ai_request_total{provider="gemini"}`).
+9. **Mudança durante o enriquecimento.** Com o crawler rodando, a listagem do ahmia mudava a cada passada, e o backfill descartava o enriquecimento ("content changed while it ran"). É o comportamento esperado; depois que o crawl parou, a fila drenou.

@@ -567,6 +567,14 @@ Junto nessa rodada, achado e fechado outro bug adjacente: `pages.search_vector` 
 
 **Timing real desta rodada não ficou limpo**: uma página levou 26min16s de `first_seen_at` a `ai_processed_at` — mas dominado por instabilidade real dos provedores no momento do teste (Ollama falhando repetidamente, Gemini devolvendo HTTP 503 "high demand"), não pelo bug do scheduler (esse já provado corrigido pela execução concorrente). Não é o número pra usar como referência do gate — só confirma que nada mais trava, mesmo sob falha externa real.
 
+### Validação real do inglês como formato padrão — 2026-10-24 (`remove-page-translation`, Groq + Gemini reais, chaves de dev revogadas depois do teste)
+
+- **Página em português.** Uma página de fórum em português, publicada no tópico `raw-pages` pelo caminho normal de ingestão, saiu `processed` com `language.code = pt`, categoria `forum` e resumo **em inglês**, fiel ao texto ("The forum gathers individuals focused on online privacy...").
+- **Página em inglês.** `/privacy/` do ahmia, reenfileirada, saiu com resumo em inglês e categoria `service`.
+- **Sem tradução.** Nenhuma chamada `TRANSLATE` em `ai_request_total` nem no log, nas duas execuções do core, e nenhuma chave `ai-cache:TRANSLATE` nova no Redis.
+- **Resumo de mudança.** A mudança real `/privacy/` v1→v2 (fase4-sdd 9.1), reenfileirada, voltou em inglês ("The privacy policy was updated from May 2025 to September 2026...").
+- **Achado.** O cache de IA serviu o resumo antigo, em português, para uma página de texto igual, porque a chave não inclui o prompt (fase4-sdd 9.2, item 7). Os resumos acima foram gerados depois de limpar `ai-cache:*`.
+
 ### Gate final
 Uma página nova é automaticamente resumida e classificada, com descrição em inglês, dentro de alguns minutos após ser indexada, com o provedor de IA escolhido automaticamente e sem estourar nenhum limite gratuito sob uso normal.
 

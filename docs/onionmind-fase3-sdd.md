@@ -301,7 +301,7 @@ Adapters usam `RestClient` (Spring 6). Sem SDK proprietário — Groq é OpenAI-
 ```
 Processor chama orchestrator.summarize(text, ctx)
   → MetricsDecorator          registra latência e provider escolhido (Micrometer)
-    → CacheDecorator          Redis: hit por (hash do texto, tipo de tarefa) → retorna
+    → CacheDecorator          Redis: hit por (tipo de tarefa, hash do prompt + texto) → retorna
       → [ loop de escalonamento, até ai.max-escalations ]
           RetryDecorator      backoff em falha transiente — MESMO provider
             → CostOptimizerRouter.select(ctx)   → AIProvider.complete()
@@ -420,7 +420,7 @@ public void updateAiFields(String url, AiOutcome outcome) {
 | D4 | ADR-003 — Avro + Schema Registry "quando a Fase 3 chegar" | **Adiar explicitamente.** Continuar com eventos JSON. | A Fase 3 não adiciona nenhum produtor novo no tópico `raw-pages` (só consumidores in-JVM). Schema Registry resolve evolução entre múltiplos produtores independentes — problema que só aparece na Fase 6 (conectores externos). Registrar a decisão para não reabrir. |
 | D5 | `embed()` na Fase 3 | Continua single-provider (Ollama), sem escada, sem `ValidationDecorator` | Só há um provedor de embeddings na Fase 3. Meter embeddings no loop de escalonamento adiciona complexidade sem ganho. Comportamento idêntico ao da Fase 2. |
 | D6 | Idioma-alvo da tradução | PT fixo nesta fase. **Substituída** por `remove-page-translation`: sem tradução de página, saída de IA em inglês | O produto é para pesquisadores lusófonos (personas, `sdd.md` seção 2). Alvo configurável é trabalho de Fase 5+ (multi-tenant / preferência de usuário). |
-| D7 | Cache de IA | Redis, TTL 24h, chave por `(hash do texto, tipo de tarefa)` — não por provider | Reprocessar a mesma página (re-crawl com hash igual já é barrado antes; isto cobre restart de job / backfill sobreposto). Não incluir o provider na chave: a resposta de qualquer provedor válido serve. |
+| D7 | Cache de IA | Redis, TTL 24h, chave por `(hash do texto, tipo de tarefa)` — não por provider. **Corrigida** por `fix-ai-cache-prompt-version` (2026-10-24): a chave passou a ser `(tipo de tarefa, sha256(prompt + texto))`, porque uma mudança de prompt servia respostas do prompt antigo | Reprocessar a mesma página (re-crawl com hash igual já é barrado antes; isto cobre restart de job / backfill sobreposto). Não incluir o provider na chave: a resposta de qualquer provedor válido serve. O prompt entra na chave para que a troca de prompt (ou o idioma-alvo de `translate`) não reaproveite resposta antiga; as entradas antigas expiram pelo TTL. |
 
 ---
 

@@ -101,6 +101,16 @@ public abstract class Fase4IntegrationTestBase {
                 }
 
                 @Override
+                public com.onionmind.ai.QueryRewrite rewriteQuery(String question, TaskContext ctx) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public com.onionmind.ai.Answer answer(String question, java.util.List<String> sources, TaskContext ctx) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
                 public Embedding embed(String text, TaskContext ctx) {
                     throw new UnsupportedOperationException("embeddings are off in these tests");
                 }

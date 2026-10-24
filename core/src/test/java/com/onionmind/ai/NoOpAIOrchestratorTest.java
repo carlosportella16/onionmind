@@ -41,4 +41,12 @@ class NoOpAIOrchestratorTest {
         assertThatThrownBy(() -> orchestrator.detectLanguage("text", context()))
                 .isInstanceOf(UnsupportedOperationException.class);
     }
+
+    @Test
+    void chatOperationsThrowUnsupportedOperationException() {
+        assertThatThrownBy(() -> orchestrator.rewriteQuery("question", context()))
+                .isInstanceOf(UnsupportedOperationException.class);
+        assertThatThrownBy(() -> orchestrator.answer("question", java.util.List.of("source"), context()))
+                .isInstanceOf(UnsupportedOperationException.class);
+    }
 }

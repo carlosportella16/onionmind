@@ -153,6 +153,16 @@ class Fase2SemanticSearchGateTest {
                 }
 
                 @Override
+                public com.onionmind.ai.QueryRewrite rewriteQuery(String question, TaskContext ctx) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public com.onionmind.ai.Answer answer(String question, java.util.List<String> sources, TaskContext ctx) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
                 public Embedding embed(String text, TaskContext ctx) {
                     return new Embedding(new float[]{0.1f, 0.2f, 0.3f}, 1.0);
                 }

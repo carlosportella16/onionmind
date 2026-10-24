@@ -27,7 +27,9 @@ class TaskContextTest {
                 TaskContext.TaskType.TRANSLATE,
                 TaskContext.TaskType.DETECT_LANGUAGE,
                 TaskContext.TaskType.EXTRACT_ENTITIES,
-                TaskContext.TaskType.EMBED
+                TaskContext.TaskType.EMBED,
+                TaskContext.TaskType.REWRITE_QUERY,
+                TaskContext.TaskType.ANSWER
         );
     }
 }

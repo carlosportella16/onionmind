@@ -1,5 +1,6 @@
 package com.onionmind.ai.decorator;
 
+import com.onionmind.ai.NamedEntity;
 import com.onionmind.ai.TaskContext.TaskType;
 import com.onionmind.ai.provider.CompletionResponse;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
@@ -7,6 +8,10 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 /**
  * Parses the provider's raw text into a {@link ValidatedResult} for the task type.
@@ -30,8 +35,32 @@ public class ValidationDecorator {
             case CLASSIFY -> extract(json, "category", null);
             case TRANSLATE -> extract(json, "translation", "detectedLanguage");
             case DETECT_LANGUAGE -> extract(json, "language", null);
-            case EXTRACT_ENTITIES, EMBED -> ValidatedResult.invalid();
+            case EXTRACT_ENTITIES -> extractEntities(json);
+            case EMBED -> ValidatedResult.invalid();
         };
+    }
+
+    /**
+     * {@code {"entities": [{type, value, confidence}], "confidence": x}}. A missing or non-array
+     * {@code entities} is invalid; inside it, types outside the taxonomy, blank or oversized
+     * values are dropped (prompt-injected output can't smuggle anything past this). The kept
+     * entities travel as a JSON array in {@code primary} — {@code "[]"} is a valid answer.
+     */
+    private ValidatedResult extractEntities(JsonNode json) {
+        JsonNode entities = json.get("entities");
+        if (entities == null || !entities.isArray()) {
+            return ValidatedResult.invalid();
+        }
+        List<NamedEntity> kept = new ArrayList<>();
+        for (JsonNode e : entities) {
+            String type = e.path("type").asString("").trim().toLowerCase(Locale.ROOT);
+            String value = e.path("value").asString("").strip();
+            if (NamedEntity.TYPES.contains(type) && !value.isEmpty() && value.length() <= NamedEntity.MAX_VALUE_LENGTH) {
+                kept.add(new NamedEntity(type, value, clamp(e.path("confidence").asDouble(0.0))));
+            }
+        }
+        return new ValidatedResult(mapper.writeValueAsString(kept), null,
+            clamp(json.path("confidence").asDouble(0.0)));
     }
 
     private ValidatedResult extract(JsonNode json, String primaryField, String secondaryField) {

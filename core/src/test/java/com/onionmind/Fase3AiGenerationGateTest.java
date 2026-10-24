@@ -156,6 +156,11 @@ class Fase3AiGenerationGateTest {
                 }
 
                 @Override
+                public com.onionmind.ai.EntityExtraction extractEntities(String text, TaskContext ctx) {
+                    return new com.onionmind.ai.EntityExtraction(java.util.List.of(), 0.9);
+                }
+
+                @Override
                 public Embedding embed(String text, TaskContext ctx) {
                     throw new UnsupportedOperationException("not used in this gate");
                 }

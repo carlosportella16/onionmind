@@ -34,6 +34,11 @@ public class NoOpAIOrchestrator implements AIOrchestrator {
     }
 
     @Override
+    public EntityExtraction extractEntities(String text, TaskContext ctx) {
+        throw new UnsupportedOperationException(MESSAGE);
+    }
+
+    @Override
     public Embedding embed(String text, TaskContext ctx) {
         throw new UnsupportedOperationException(MESSAGE);
     }

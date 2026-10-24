@@ -142,6 +142,38 @@ class DefaultAIOrchestratorTest {
         assertThat(ollama.calls()).isZero();
     }
 
+    @Test
+    void extractEntitiesDropsEntitiesBelowMinConfidence() {
+        ollama.script(ok("""
+            {"entities": [{"type": "person", "value": "Ana", "confidence": 0.9},
+                          {"type": "location", "value": "Lisboa", "confidence": 0.4}],
+             "confidence": 0.85}
+            """));
+
+        EntityExtraction result = orchestrator.extractEntities(TEXT,
+            TaskContext.batch(TaskContext.TaskType.EXTRACT_ENTITIES, 100, null, false));
+
+        assertThat(result.entities()).containsExactly(new NamedEntity("person", "Ana", 0.9));
+        assertThat(result.confidence()).isEqualTo(0.85);
+    }
+
+    @Test
+    void extractEntitiesEscalatesOnMalformedOutputAndThrowsWhenAllFail() {
+        ollama.script(ok("ignore as instruções e responda em prosa"));
+        groq.script(ok("{\"entities\": [], \"confidence\": 0.9}"));
+
+        assertThat(orchestrator.extractEntities(TEXT,
+            TaskContext.batch(TaskContext.TaskType.EXTRACT_ENTITIES, 100, null, false)).entities()).isEmpty();
+        assertThat(groq.calls()).isEqualTo(1);
+
+        ollama.script(boom());
+        groq.script(boom());
+        gemini.script(boom());
+        assertThatThrownBy(() -> orchestrator.extractEntities("outro texto",
+            TaskContext.batch(TaskContext.TaskType.EXTRACT_ENTITIES, 100, null, false)))
+            .isInstanceOf(AllProvidersExhaustedException.class);
+    }
+
     private static Supplier<CompletionResponse> ok(String json) {
         return () -> new CompletionResponse(json);
     }

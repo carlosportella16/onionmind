@@ -15,9 +15,11 @@ import java.util.UUID;
 
 /**
  * First real ContentProcessor with AI (SDD Fase 2, sec. 3.5). Chunks the extracted text,
- * embeds each chunk via AIOrchestrator and upserts to Qdrant. Runs before the page is
- * persisted (same as every other ContentProcessor in the pipeline), so identity is keyed
- * by url — never a numeric page id, which doesn't exist yet at this point.
+ * embeds every chunk in one batch via AIOrchestrator and upserts to Qdrant. Only the first
+ * {@code embedding.max-chars-per-page} characters are embedded, so a 1.3 MB listing costs
+ * ~25 chunks, not 3000 (replace-ollama-with-gemini-deepseek D6). A failed batch upserts
+ * nothing — no partial page in the index. Identity is keyed by url: this can run before the
+ * page is persisted, when no numeric page id exists yet.
  */
 @Component
 @ConditionalOnProperty(prefix = "embedding", name = "enabled", havingValue = "true")
@@ -27,15 +29,18 @@ public class EmbeddingProcessor implements ContentProcessor {
     private final VectorStore vectorStore;
     private final int chunkSize;
     private final int overlapPercent;
+    private final int maxCharsPerPage;
 
     public EmbeddingProcessor(AIOrchestrator aiOrchestrator,
                                VectorStore vectorStore,
                                @Value("${embedding.chunk-size}") int chunkSize,
-                               @Value("${embedding.chunk-overlap-percent}") int overlapPercent) {
+                               @Value("${embedding.chunk-overlap-percent}") int overlapPercent,
+                               @Value("${embedding.max-chars-per-page:50000}") int maxCharsPerPage) {
         this.aiOrchestrator = aiOrchestrator;
         this.vectorStore = vectorStore;
         this.chunkSize = chunkSize;
         this.overlapPercent = overlapPercent;
+        this.maxCharsPerPage = maxCharsPerPage;
     }
 
     @Override
@@ -46,31 +51,28 @@ public class EmbeddingProcessor implements ContentProcessor {
 
         try {
             String currentHash = document.resolvedContentHash();
+            if (vectorStore.hasUnchangedEmbedding(document.url(), currentHash)) {
+                return ProcessingResult.unchanged(document);
+            }
 
-        if (vectorStore.hasUnchangedEmbedding(document.url(), currentHash)) {
-            return ProcessingResult.unchanged(document);
-        }
+            String text = document.extractedText();
+            if (text.length() > maxCharsPerPage) {
+                text = text.substring(0, maxCharsPerPage);
+            }
+            List<String> chunks = TextChunker.chunk(text, chunkSize, overlapPercent);
+            TaskContext ctx = TaskContext.batch(TaskContext.TaskType.EMBED, text.length() / 4, null, false);
+            List<Embedding> embeddings = aiOrchestrator.embedAll(chunks, document.url(), ctx);
 
-            List<String> chunks = TextChunker.chunk(document.extractedText(), chunkSize, overlapPercent);
             List<EmbeddingPoint> points = new ArrayList<>(chunks.size());
-
             for (int i = 0; i < chunks.size(); i++) {
-                String chunkText = chunks.get(i);
-                TaskContext ctx = new TaskContext(
-                    TaskContext.TaskType.EMBED, chunkText.length() / 4, null, false, false, null, 0
-                );
-                try {
-                    Embedding embedding = aiOrchestrator.embed(chunkText, ctx);
-                    points.add(new EmbeddingPoint(
-                        UUID.nameUUIDFromBytes((document.url() + "-" + i).getBytes()),
-                        embedding.vector(),
-                        document.url(),
-                        i,
-                        currentHash
-                    ));
-                } catch (Exception e) {
-                    return ProcessingResult.failed(document, "Embedding failed on chunk " + i + ": " + e.getMessage());
-                }
+                points.add(new EmbeddingPoint(
+                    UUID.nameUUIDFromBytes((document.url() + "-" + i).getBytes()),
+                    embeddings.get(i).vector(),
+                    document.url(),
+                    i,
+                    currentHash,
+                    chunks.get(i)
+                ));
             }
 
             vectorStore.upsert(points);

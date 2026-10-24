@@ -54,7 +54,7 @@ class DefaultAIOrchestratorTest {
             new ValidationDecorator(),
             cache,
             new MetricsDecorator(new SimpleMeterRegistry(), tracker),
-            new OllamaEmbedder(embedServer.baseUrl(), "nomic-embed-text"),
+            new GeminiEmbedder(embedServer.baseUrl(), "test-key", "gemini-embedding-2", 3, 100),
             0.7, 2);
     }
 
@@ -190,12 +190,23 @@ class DefaultAIOrchestratorTest {
 
     @Test
     void embedDelegatesToTheEmbedderNotTheLadder() {
-        embedServer.responseBody = "{\"embeddings\":[[0.5,0.6,0.7]]}";
+        embedServer.responseBody = "{\"embeddings\":[{\"values\":[0.5,0.6,0.7]}]}";
 
         Embedding embedding = orchestrator.embed("texto", shortCtx());
 
         assertThat(embedding.vector()).containsExactly(0.5f, 0.6f, 0.7f);
         assertThat(gemini.calls()).isZero();
+    }
+
+    @Test
+    void embedAllSendsOneBatchWithTheRoleFromTheContext() {
+        embedServer.responseBody = "{\"embeddings\":[{\"values\":[1,0,0]},{\"values\":[0,1,0]}]}";
+
+        List<Embedding> out = orchestrator.embedAll(List.of("a", "b"), "http://x.onion/",
+            TaskContext.batch(TaskContext.TaskType.EMBED, 1, null, false));
+
+        assertThat(out).extracting(e -> e.vector()[1]).containsExactly(0f, 1f);
+        assertThat(embedServer.requestBodies).singleElement().asString().contains("title: http://x.onion/ | text: a");
     }
 
     @Test

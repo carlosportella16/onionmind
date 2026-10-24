@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * run (observed: 13+ minutes on a large page) starved AiEnrichmentBackfillJob completely,
  * which never got a turn on its own independent 5-minute schedule. Proven here against the
  * shared TaskScheduler infrastructure directly rather than the real jobs, to stay fast and
- * deterministic (no dependency on Ollama/Qdrant timing).
+ * deterministic (no dependency on AI provider/Qdrant timing).
  */
 @Import(TestcontainersConfiguration.class)
 @SpringBootTest

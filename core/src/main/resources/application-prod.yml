@@ -21,21 +21,20 @@ spring:
 server:
   port: 8081
 
-# Phase 2: embeddings + semantic search (Cloudflare Workers AI fallback)
-ollama:
-  url: ${OLLAMA_URL:http://localhost:11434}
-  model: nomic-embed-text
-  timeout: 30s
-
+# Phase 2: embeddings + semantic search (Gemini embeddings, same key as ai.gemini).
 qdrant:
   url: ${QDRANT_URL:localhost}
   port: ${QDRANT_PORT:6333}
   api-key: ${QDRANT_API_KEY:}
-  collection: page_chunks
-  vector-size: 768
+  collection: ${QDRANT_COLLECTION:page_chunks_v2}
+  vector-size: ${embedding.dimensions}
 
 embedding:
   enabled: ${EMBEDDING_ENABLED:false}
+  model: gemini-embedding-2
+  dimensions: 768
+  request-batch-size: 100
+  max-chars-per-page: 50000
   chunk-size: 512
   chunk-overlap-percent: 15
   batch-size: 100

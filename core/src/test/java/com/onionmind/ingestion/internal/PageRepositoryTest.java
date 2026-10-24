@@ -195,12 +195,12 @@ class PageRepositoryTest {
         String url = "http://embed-failed-" + System.nanoTime() + ".onion";
 
         repository.upsertWithVersioning(doc(url, "content whose embedding failed"),
-            new EmbeddingOutcome(EmbeddingOutcome.FAILED_TRANSIENT, "ollama unreachable"));
+            new EmbeddingOutcome(EmbeddingOutcome.FAILED_TRANSIENT, "gemini unreachable"));
 
         assertThat(embeddingStatusOf(url)).isEqualTo(EmbeddingOutcome.FAILED_TRANSIENT);
         String errorMessage = jdbc.queryForObject(
             "SELECT embedding_error_message FROM pages WHERE url = ?", String.class, url);
-        assertThat(errorMessage).isEqualTo("ollama unreachable");
+        assertThat(errorMessage).isEqualTo("gemini unreachable");
     }
 
     @Test

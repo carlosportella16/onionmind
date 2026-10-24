@@ -46,7 +46,7 @@ class QdrantVectorStoreTest {
         });
         server.start();
         int port = server.getAddress().getPort();
-        store = new QdrantVectorStore("127.0.0.1", port, "", "page_chunks", 3);
+        store = new QdrantVectorStore("127.0.0.1", port, "", "page_chunks", 3, "gemini-embedding-2");
     }
 
     @AfterEach
@@ -58,13 +58,15 @@ class QdrantVectorStoreTest {
     void upsertSendsPointsToQdrant() {
         nextResponseBody = "{\"status\":\"ok\"}";
         UUID id = UUID.randomUUID();
-        EmbeddingPoint point = new EmbeddingPoint(id, new float[]{0.1f, 0.2f, 0.3f}, "http://x.onion", 0, "hash1");
+        EmbeddingPoint point = new EmbeddingPoint(id, new float[]{0.1f, 0.2f, 0.3f}, "http://x.onion", 0, "hash1",
+            "the chunk text");
 
         store.upsert(List.of(point));
 
         assertThat(lastRequestMethod.get()).isEqualTo("PUT");
         assertThat(lastRequestPath.get()).isEqualTo("/collections/page_chunks/points");
-        assertThat(lastRequestBody.get()).contains(id.toString()).contains("hash1").contains("http://x.onion");
+        assertThat(lastRequestBody.get()).contains(id.toString()).contains("hash1").contains("http://x.onion")
+            .contains("\"model\":\"gemini-embedding-2\"", "\"text\":\"the chunk text\"");
     }
 
     @Test
@@ -128,6 +130,7 @@ class QdrantVectorStoreTest {
     @Test
     void ensureCollectionSkipsCreationWhenAlreadyExists() {
         nextGetStatus = 200;
+        nextResponseBody = "{\"result\":{\"config\":{\"params\":{\"vectors\":{\"size\":3,\"distance\":\"Cosine\"}}}}}";
 
         store.ensureCollection();
 

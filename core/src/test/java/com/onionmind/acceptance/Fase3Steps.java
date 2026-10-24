@@ -145,7 +145,6 @@ public class Fase3Steps {
 
     private com.onionmind.ai.FakeHttpServer server(String provider) {
         return switch (provider) {
-            case "ollama" -> fakes.ollama;
             case "deepseek" -> fakes.deepseek;
             case "gemini" -> fakes.gemini;
             default -> throw new IllegalArgumentException("unknown provider " + provider);
@@ -153,7 +152,7 @@ public class Fase3Steps {
     }
 
     private java.util.List<String> generationBodies() {
-        return java.util.stream.Stream.of(fakes.ollama, fakes.deepseek, fakes.gemini)
+        return java.util.stream.Stream.of(fakes.deepseek, fakes.gemini)
             .flatMap(s -> s.requestBodies.stream()).toList();
     }
 

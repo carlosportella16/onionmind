@@ -23,6 +23,10 @@ import java.util.Map;
  * Thin REST client for Qdrant (SDD Fase 2, sec. 3.2). Talks HTTP directly instead of a
  * generated client so the module has no third-party runtime dependency beyond Jackson,
  * which Spring Boot already provides.
+ *
+ * <p>Vectors of different models never mix (replace-ollama-with-gemini-deepseek D7): each
+ * model gets its own collection ({@code qdrant.collection}), every point records the model
+ * that made it, and a point of another model is neither "unchanged" nor a search hit.
  */
 @Component
 @ConditionalOnProperty(prefix = "embedding", name = "enabled", havingValue = "true")
@@ -38,48 +42,68 @@ public class QdrantVectorStore implements VectorStore {
     private final String apiKey;
     private final String collection;
     private final int vectorSize;
+    private final String model;
 
     public QdrantVectorStore(@Value("${qdrant.url}") String host,
                               @Value("${qdrant.port}") int port,
                               @Value("${qdrant.api-key:}") String apiKey,
                               @Value("${qdrant.collection}") String collection,
-                              @Value("${qdrant.vector-size}") int vectorSize) {
+                              @Value("${qdrant.vector-size}") int vectorSize,
+                              @Value("${embedding.model}") String model) {
         this.baseUrl = "http://" + host + ":" + port;
         this.apiKey = apiKey;
         this.collection = collection;
         this.vectorSize = vectorSize;
+        this.model = model;
     }
 
     /**
      * Runs on startup so the collection exists before the first embedding is upserted — without
      * this, every upsert 404s forever, since Qdrant never creates collections implicitly.
-     * Swallows failures (Qdrant down at boot) so a transient outage doesn't stop the app.
+     * Swallows Qdrant being unreachable at boot so a transient outage doesn't stop the app — but
+     * not a dimension mismatch, which would silently corrupt every search: that fails the boot.
      */
     @PostConstruct
     void ensureCollectionOnStartup() {
         try {
             ensureCollection();
-        } catch (Exception e) {
+        } catch (QdrantException e) {
             log.warn("Could not ensure Qdrant collection '{}' on startup: {}", collection, e.getMessage());
         }
     }
 
-    /** Creates the collection if it doesn't exist yet. Safe to call on every startup. */
+    /**
+     * Creates the collection with the configured dimension if it doesn't exist yet; safe to call
+     * on every startup. Throws IllegalStateException when it exists with another dimension.
+     */
     public void ensureCollection() {
-        if (collectionExists()) {
-            return;
+        Integer existing = existingVectorSize();
+        if (existing == null) {
+            Map<String, Object> body = Map.of("vectors", Map.of("size", vectorSize, "distance", "Cosine"));
+            send("PUT", "/collections/" + collection, body);
+        } else if (existing != vectorSize) {
+            throw new IllegalStateException("Qdrant collection '%s' has %d-dimension vectors but %d are configured "
+                .formatted(collection, existing, vectorSize)
+                + "— point qdrant.collection at a new collection for the new embedding model");
         }
-        Map<String, Object> body = Map.of("vectors", Map.of("size", vectorSize, "distance", "Cosine"));
-        send("PUT", "/collections/" + collection, body);
     }
 
-    private boolean collectionExists() {
+    /** The collection's vector size, or null when it doesn't exist. */
+    private Integer existingVectorSize() {
+        HttpResponse<String> response;
         try {
-            HttpResponse<String> response = execute(newRequestBuilder("/collections/" + collection).GET());
-            return response.statusCode() == 200;
+            response = execute(newRequestBuilder("/collections/" + collection).GET());
         } catch (Exception e) {
-            return false;
+            throw new QdrantException("Qdrant GET /collections/" + collection + " failed", e);
         }
+        if (response.statusCode() == 404) {
+            return null;
+        }
+        if (response.statusCode() >= 400) {
+            throw new QdrantException("Qdrant GET /collections/" + collection + " failed: HTTP " + response.statusCode());
+        }
+        return mapper.readTree(response.body()).path("result").path("config").path("params")
+            .path("vectors").path("size").asInt();
     }
 
     /** Idempotent insert/update keyed by point id. */
@@ -95,18 +119,22 @@ public class QdrantVectorStore implements VectorStore {
                 "payload", Map.of(
                     "url", p.url(),
                     "chunk_index", p.chunkIndex(),
-                    "content_hash", p.contentHash()
+                    "content_hash", p.contentHash(),
+                    "model", model,
+                    "text", p.text()
                 )
             ));
         }
-        send("PUT", "/collections/" + collection + "/points", Map.of("points", pointBodies));
+        // wait=true: the page is only marked embedded once its points are searchable
+        send("PUT", "/collections/" + collection + "/points?wait=true", Map.of("points", pointBodies));
     }
 
     public List<SemanticSearchHit> search(float[] queryVector, int topK) {
         Map<String, Object> body = Map.of(
             "vector", toFloatList(queryVector),
             "limit", topK,
-            "with_payload", true
+            "with_payload", true,
+            "filter", Map.of("must", List.of(sameModel()))
         );
         JsonNode response = send("POST", "/collections/" + collection + "/points/search", body);
         List<SemanticSearchHit> hits = new ArrayList<>();
@@ -121,12 +149,16 @@ public class QdrantVectorStore implements VectorStore {
         return hits;
     }
 
-    /** Cost gate (SDD Fase 2, sec. 3.5): true if this url already has a chunk with the same content hash. */
+    /**
+     * Cost gate (SDD Fase 2, sec. 3.5): true if this url already has a chunk with the same content
+     * hash, embedded by the configured model — another model's point means re-embed.
+     */
     public boolean hasUnchangedEmbedding(String url, String contentHash) {
         Map<String, Object> filter = Map.of(
             "must", List.of(
                 Map.of("key", "url", "match", Map.of("value", url)),
-                Map.of("key", "content_hash", "match", Map.of("value", contentHash))
+                Map.of("key", "content_hash", "match", Map.of("value", contentHash)),
+                sameModel()
             )
         );
         Map<String, Object> body = Map.of("filter", filter, "limit", 1);
@@ -137,6 +169,10 @@ public class QdrantVectorStore implements VectorStore {
     public void deleteByUrl(String url) {
         Map<String, Object> filter = Map.of("must", List.of(Map.of("key", "url", "match", Map.of("value", url))));
         send("POST", "/collections/" + collection + "/points/delete", Map.of("filter", filter));
+    }
+
+    private Map<String, Object> sameModel() {
+        return Map.of("key", "model", "match", Map.of("value", model));
     }
 
     private List<Float> toFloatList(float[] vector) {

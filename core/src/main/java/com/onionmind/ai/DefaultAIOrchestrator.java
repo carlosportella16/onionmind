@@ -26,9 +26,9 @@ import java.util.Set;
 /**
  * The real Fase 3 orchestrator (SDD sec. 7.2). {@code summarize}/{@code classify}/{@code translate}
  * run: cache → escalation loop (router → retry → provider → validate). A low-confidence
- * result after the last escalation is returned, not thrown — only a total transport
- * failure throws {@link AllProvidersExhaustedException}. {@code embed} bypasses all of
- * this — one provider, deterministic.
+ * result after the last escalation is returned, not thrown — only a total failure throws
+ * {@link AllProvidersExhaustedException}, flagged quota-only when no provider had quota.
+ * {@code embed}/{@code embedAll} bypass all of this — one provider (Gemini), deterministic.
  */
 @Component
 @ConditionalOnExpression("${ai.enabled:false}")
@@ -42,7 +42,7 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
     private final ValidationDecorator validator;
     private final CacheDecorator cache;
     private final MetricsDecorator metrics;
-    private final OllamaEmbedder embedder;
+    private final GeminiEmbedder embedder;
     private final double minConfidence;
     private final int maxEscalations;
 
@@ -72,7 +72,7 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
                                  ValidationDecorator validator,
                                  CacheDecorator cache,
                                  MetricsDecorator metrics,
-                                 OllamaEmbedder embedder,
+                                 GeminiEmbedder embedder,
                                  @Value("${ai.min-confidence:0.7}") double minConfidence,
                                  @Value("${ai.max-escalations:2}") int maxEscalations) {
         this.router = router;
@@ -133,7 +133,12 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
 
     @Override
     public Embedding embed(String text, TaskContext ctx) {
-        return embedder.embed(text);
+        return embedder.embed(List.of(text), null, ctx.interactive()).getFirst();
+    }
+
+    @Override
+    public List<Embedding> embedAll(List<String> texts, String title, TaskContext ctx) {
+        return embedder.embed(texts, title, ctx.interactive());
     }
 
     private ValidatedResult execute(CompletionRequest request, TaskContext ctx) {

@@ -34,9 +34,9 @@ class EmbeddingOutcomeTest {
 
     @Test
     void failureMapsToFailedTransientWithErrorMessage() {
-        var outcome = EmbeddingOutcome.from(ProcessingResult.failed(doc(), "ollama unreachable"));
+        var outcome = EmbeddingOutcome.from(ProcessingResult.failed(doc(), "gemini unreachable"));
 
         assertThat(outcome.status()).isEqualTo(EmbeddingOutcome.FAILED_TRANSIENT);
-        assertThat(outcome.errorMessage()).isEqualTo("ollama unreachable");
+        assertThat(outcome.errorMessage()).isEqualTo("gemini unreachable");
     }
 }

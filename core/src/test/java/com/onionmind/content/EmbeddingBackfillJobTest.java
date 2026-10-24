@@ -95,7 +95,7 @@ class EmbeddingBackfillJobTest {
         insertPage("http://still-broken.onion", "pending");
         when(embeddingProcessor.process(any())).thenAnswer(inv -> {
             Document doc = inv.getArgument(0);
-            return ProcessingResult.failed(doc, "ollama unreachable");
+            return ProcessingResult.failed(doc, "gemini unreachable");
         });
 
         var job = new EmbeddingBackfillJob(jdbc, embeddingProcessor, 10);
@@ -104,7 +104,7 @@ class EmbeddingBackfillJobTest {
         assertThat(statusOf("http://still-broken.onion")).isEqualTo(EmbeddingOutcome.FAILED_TRANSIENT);
         String error = jdbc.queryForObject(
             "SELECT embedding_error_message FROM pages WHERE url = ?", String.class, "http://still-broken.onion");
-        assertThat(error).isEqualTo("ollama unreachable");
+        assertThat(error).isEqualTo("gemini unreachable");
     }
 
     @Test

@@ -80,10 +80,12 @@ func TestGenerationEndpointsAnswerEachTaskInJSON(t *testing.T) {
 	defer srv.Close()
 
 	tasks := map[string]string{
-		"Classify the page":                 "category",
-		"Identify the predominant language": "language",
-		"You summarize web pages":           "summary",
-		"Extract the named entities":        "entities",
+		"Classify the page":                                    "category",
+		"Identify the predominant language":                    "language",
+		"You summarize web pages":                              "summary",
+		"Extract the named entities":                           "entities",
+		"Rewrite the question as a short English search query": "query",
+		"Answer the question using only the sources":           "answer",
 	}
 	for system, field := range tasks {
 		var gen struct {
@@ -118,5 +120,19 @@ func TestGenerationEndpointsAnswerEachTaskInJSON(t *testing.T) {
 	}
 	if code := post(t, srv.URL+"/v1beta/models/x:countTokens", `{}`, nil); code != http.StatusNotFound {
 		t.Errorf("unknown Gemini call should be 404, got %d", code)
+	}
+}
+
+func TestChatAnswerCitesTheFirstSourceOnlyWhenOneWasSent(t *testing.T) {
+	const system = "Answer the question using only the sources"
+	cited := answer(system + "\nQuestion: q\n\n<source id=\"S1\">\nxilofonista\n</source>\n")
+	if c := cited["citations"].([]string); len(c) != 1 || c[0] != "S1" {
+		t.Errorf("want [S1], got %v", cited["citations"])
+	}
+	if c := answer(system + "\nQuestion: q\n")["citations"].([]string); len(c) != 0 {
+		t.Errorf("no source should cite nothing, got %v", c)
+	}
+	if q := answer("Rewrite the question as a short English search query\n criptomoedas \n")["query"]; q != "criptomoedas" {
+		t.Errorf("rewrite should echo the question, got %q", q)
 	}
 }

@@ -95,6 +95,7 @@ func initializeScenario(sc *godog.ScenarioContext) {
 	sc.Step(`^os sites onion abaixo:$`, w.declareSites)
 	sc.Step(`^o teto de publicação é de (\d+) MB$`, w.publishCeiling)
 	sc.Step(`^o Redis está indisponível$`, w.redisDown)
+	sc.Step(`^o host "([^"]*)" está na denylist do crawler$`, w.banHost)
 	sc.Step(`^o crawler roda com a semente "([^"]*)" e profundidade máxima (\d+)$`, w.runCrawler)
 	sc.Step(`^a página "([^"]*)" é publicada$`, w.assertPublished)
 	sc.Step(`^a página "([^"]*)" não é publicada$`, w.assertNotPublished)
@@ -125,6 +126,12 @@ func (w *world) declareSites(table *godog.Table) error {
 		}
 		env.sites.Set(cols["url"], page)
 	}
+	return nil
+}
+
+// banHost puts host ("<56 base32>.onion") on the crawler's denylist, as ahmia's /banned/ lists it.
+func (w *world) banHost(host string) error {
+	w.banned = append(w.banned, host)
 	return nil
 }
 
@@ -250,8 +257,9 @@ func (w *world) assertProxyHost(host string) error {
 
 func (w *world) assertProxyNeverAsked(host string) error {
 	time.Sleep(settleWait)
-	if slices.Contains(env.socks.Hosts(), host) {
-		return fmt.Errorf("crawler asked the proxy for %q", host)
+	// Hostnames are case-insensitive: an upper-cased link must not slip past this check.
+	if slices.ContainsFunc(env.socks.Hosts(), func(h string) bool { return strings.EqualFold(h, host) }) {
+		return fmt.Errorf("crawler asked the proxy for %q (got %v)", host, env.socks.Hosts())
 	}
 	return nil
 }

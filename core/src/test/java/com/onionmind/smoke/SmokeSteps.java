@@ -49,6 +49,11 @@ public class SmokeSteps {
         assertThat(response.json().path(b).isNumber()).as(response.body()).isTrue();
     }
 
+    @Então("o campo {string} é numérico")
+    public void assertNumeric(String field) {
+        assertThat(response.json().path(field).isNumber()).as(response.body()).isTrue();
+    }
+
     @Então("o corpo contém as séries {string} e {string}")
     public void assertSeries(String a, String b) {
         assertThat(response.body()).contains(a).contains(b);

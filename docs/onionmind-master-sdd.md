@@ -70,7 +70,7 @@ Um pesquisador busca "criptomoedas" (Fase 1: full-text). Encontra páginas com t
 **Decisão:** interface `AIOrchestrator` própria (seção 6.2). Internamente, cadeia de decorators. Retry cobre falha transiente contra o mesmo provider; um loop de escalonamento separado troca de provider quando o problema é qualidade da resposta (confidence baixo, JSON inválido).
 
 **Provedores (revisão de 2026-10-24, change `replace-ollama-with-gemini-deepseek`):** o Ollama local saiu. Nas validações reais (`onionmind-fase4-sdd.md` 9.1, item 5, e 9.2, item 8) ele saturava a CPU da VM, ocupava ~6 GB de RAM e custava ~90 s por falha antes de a tarefa cair para a nuvem. O Groq também saiu.
-- **Geração:** `gemini-2.5-flash-lite` no tier pago, com thinking desligado e saída JSON. O último degrau é o `deepseek-flash`, num provider OpenAI-compatível genérico (`ai.openai-compatible.<id>`), sem gate de cota: o saldo pré-pago é o teto de gasto.
+- **Geração:** `gemini-3.5-flash-lite` no tier pago, com thinking no nível `minimal` (o 2.5 Flash-Lite foi fechado para contas novas em 2026-10) e saída JSON. O último degrau é o `deepseek-flash`, num provider OpenAI-compatível genérico (`ai.openai-compatible.<id>`), sem gate de cota: o saldo pré-pago é o teto de gasto.
 - **Embeddings:** `gemini-embedding-2`, multilíngue, com 768 dimensões, em lote e numa coleção nova do Qdrant (`page_chunks_v2`).
 - **Privacidade:** decisão explícita do usuário. O conteúdo `.onion` pode ir para o Gemini **pago** e para o DeepSeek. O free tier do Gemini não é aprovado, porque usa o conteúdo para melhorar os produtos do Google.
 - **Falta de cota:** sem piso local, falta de cota é um estado. Os jobs em lote esperam sem gastar tentativas.
@@ -487,7 +487,7 @@ Até 2026-10-24 a estratégia era gratuita (Ollama local, Groq e Gemini Flash fr
 | Fase | Uso | Provedor |
 |------|-----|----------|
 | 1–2 | Embeddings | `gemini-embedding-2` (pago, 768 dimensões, em lote), na coleção `page_chunks_v2` |
-| 3 | Resumo/classificação em batch (saída em inglês) | `gemini-2.5-flash-lite` → `deepseek-flash` (`ai.ladder`) |
+| 3 | Resumo/classificação em batch (saída em inglês) | `gemini-3.5-flash-lite` → `deepseek-flash` (`ai.ladder`) |
 | 5 | Chat interativo | a mesma escada, com a margem de reserva de `ai-token-quota` |
 
 O custo estimado (análise de 2026-10-24) fica em torno de US$ 6/mês de geração e US$ 6–12/mês de embeddings para 10 mil páginas por mês.

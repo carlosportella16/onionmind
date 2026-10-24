@@ -6,7 +6,7 @@
 **Status:** código completo e testado na branch `feat/phase-3-llm-integration` (OpenSpec change `phase3-ai-generation`). DoD detalhada na seção 12; gate real ainda pendente (seção 11.4). Prontidão para a Fase 4 na seção 13.
 
 > **Nota de substituição (2026-10-24, `replace-ollama-with-gemini-deepseek`):** os três adapters desta fase (Ollama, Groq e Gemini Flash free tier) foram substituídos:
-> - geração: `GeminiProvider` com `gemini-2.5-flash-lite` (pago, `systemInstruction`, JSON, thinking desligado) e `OpenAiCompatibleProvider` para o DeepSeek (`deepseek-flash`), numa escada única `ai.ladder: gemini,deepseek`;
+> - geração: `GeminiProvider` com `gemini-3.5-flash-lite` (pago, `systemInstruction`, JSON, thinking `minimal`) e `OpenAiCompatibleProvider` para o DeepSeek (`deepseek-flash`), numa escada única `ai.ladder: gemini,deepseek`;
 > - embeddings: `gemini-embedding-2` no lugar do `nomic-embed-text`, com coleção nova `page_chunks_v2`;
 > - limites: `ai.providers.<id>`. O estacionamento por 429 (minuto ou dia) ou 402 fica em `quota:<id>:parked`;
 > - cota por tokens (`ai-token-quota`, 2026-10-24): além de requisições, o tracker conta tokens por minuto e por dia (`tokens-per-minute`, `tokens-per-day`), a partir do uso informado pelo provedor ou de caracteres/4. Um provedor só é escolhido se a estimativa do prompt couber, e as tarefas batch deixam 30% do orçamento (`ai.interactive-reserve-percent`) para as interativas;

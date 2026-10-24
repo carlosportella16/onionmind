@@ -178,3 +178,18 @@ Itens 1–3 eram segue-adiante (não bloqueavam o gate, que foi atingido) e fora
 7. **O cache de IA não muda quando o prompt muda.** O `CacheDecorator` usa a chave `(tarefa, sha256(texto))`, com TTL de 24 h. Depois da troca dos prompts para inglês, a primeira página reenfileirada voltou com o resumo **em português** de ontem, servido do Redis. Para o teste, as chaves `ai-cache:*` foram apagadas. ✅ **Resolvido** em `fix-ai-cache-prompt-version`: a chave passou a ser `(tarefa, sha256(prompt + texto))`, e as entradas do prompt antigo deixam de ser lidas e expiram pelo TTL.
 8. **Com o Ollama em CPU, o backfill fica muito lento.** O roteador manda tarefas curtas primeiro ao Ollama (LOCAL_FIRST), e cada uma levava cerca de 90 s para falhar (timeout de 30 s mais os retries) antes de ir para a nuvem. Com `--ai.ollama.timeout=3s` a fila drenou em poucos minutos. O Groq devolveu 429 por TPM algumas vezes (item 4), e o Gemini assumiu (`ai_request_total{provider="gemini"}`). ✅ **Resolvido** em `replace-ollama-with-gemini-deepseek`: sem Ollama, não existe mais LOCAL_FIRST nem o timeout local. A escada única `ai.ladder: gemini,deepseek` começa na nuvem, e a falta de cota faz o backfill esperar sem gastar `ai_attempts`.
 9. **Mudança durante o enriquecimento.** Com o crawler rodando, a listagem do ahmia mudava a cada passada, e o backfill descartava o enriquecimento ("content changed while it ran"). É o comportamento esperado; depois que o crawl parou, a fila drenou.
+
+### 9.3 Orçamento de tokens com o Gemini real — 2026-10-24 (`ai-token-quota`)
+
+**Setup.** Gemini com a chave fornecida pelo usuário, DeepSeek sem chave (cota zero), 12 páginas reenfileiradas, cache de IA e contadores limpos, e `tokens-per-minute` baixado para 30 000 só no teste. Com a margem de batch de 35%, o teto do backfill é 19 500 tokens por minuto.
+
+**Resultado.**
+- As 12 páginas foram drenadas em ~4,7 min, todas `processed`, com `ai_attempts = 0`. Foram 40 requisições ao Gemini, e os resumos saíram em inglês. A página em português foi classificada como `forum`, e as listas de hashes como `other`, com idioma `und`.
+- O backfill parou em 21 400–21 480 tokens por minuto. Ele passa ~1,9 K do teto porque a saída não entra na estimativa feita antes da chamada (`ai-token-quota` D3), e ~8,6 K dos 10,5 K da reserva interativa ficaram livres. Não houve nenhum 429 por TPM.
+- As esperas por falta de orçamento não gastaram tentativas: o log mostra "no provider has quota ... stays queued".
+
+**Achados.**
+
+10. **`gemini-2.5-flash-lite` não está mais disponível para contas novas.** A API devolveu HTTP 404 e indicou o `gemini-3.5-flash-lite`. O 404 conta como tentativa, e as 12 páginas chegaram a `failed_permanent` em 3 minutos. O comportamento está correto, porque é um erro real de configuração, mas exigiu reenfileirar as páginas. O padrão passou a ser `gemini-3.5-flash-lite` (US$ 0,30 / 2,50 por 1M tokens). No Gemini 3, `thinkingBudget: 0` é rejeitado com 400, e o piso é `thinkingLevel: minimal`, o que foi conferido com duas chamadas reais.
+11. **Indício de que a chave usada é de free tier.** Houve um 429 "You exceeded your current quota, please check your plan and billing details" com só 13 requisições e ~9 K tokens no minuto, o que é típico do limite gratuito. A decisão de privacidade (2026-10-24) exige um projeto **com billing** para conteúdo `.onion`. Antes de qualquer crawl real com IA ligada, é preciso confirmar o billing do projeto da chave e ler os limites reais no AI Studio, para substituir os placeholders de `ai.providers.gemini`.
+

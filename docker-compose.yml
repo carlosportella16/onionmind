@@ -61,10 +61,14 @@ services:
       retries: 5
 
   tor:
-    image: dperson/torproxy:latest
+    build: ./tor
     ports: ["9050:9050"]
-    environment:
-      LOCATION: BR
+    # healthy = bootstrap finished, i.e. Tor can build circuits (fix-real-infra-findings D4)
+    healthcheck:
+      test: ["CMD", "grep", "-q", "Bootstrapped 100%", "/var/lib/tor/notices.log"]
+      interval: 5s
+      retries: 24
+      start_period: 60s
     restart: unless-stopped
 
   ollama:

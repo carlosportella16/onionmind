@@ -1293,4 +1293,4 @@ class Fase1EndToEndTest {
 ### Gate final
 Descobrir um novo `.onion`, indexá-lo e encontrá-lo por busca textual em menos de 5 minutos, de forma repetível e sem intervenção manual.
 
-**✅ Validado em 2026-08-22** contra a rede Tor real (seeds `ahmia.fi` + espelho `.onion` do Ahmia): dois ciclos completos, ~14s e ~5s respectivamente entre o crawler descobrir a página e ela aparecer em `GET /api/search`, sem intervenção manual além dos serviços já no ar. Ver `openspec/changes/phase1-crawler-search/tasks.md` seção 16 pro detalhamento e o bug de base64 encontrado/corrigido durante a validação.
+**✅ Validado em 2026-08-22** contra a rede Tor real (seeds `ahmia.fi` + espelho `.onion` do Ahmia): dois ciclos completos, ~14s e ~5s respectivamente entre o crawler descobrir a página e ela aparecer em `GET /api/search`, sem intervenção manual além dos serviços já no ar. Ver `openspec/changes/archive/2026-10-24-phase1-crawler-search/tasks.md` seção 16 pro detalhamento e o bug de base64 encontrado/corrigido durante a validação.

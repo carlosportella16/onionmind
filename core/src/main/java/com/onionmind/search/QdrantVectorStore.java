@@ -143,7 +143,8 @@ public class QdrantVectorStore implements VectorStore {
             hits.add(new SemanticSearchHit(
                 payload.path("url").asString(),
                 payload.path("chunk_index").asInt(),
-                item.path("score").asDouble()
+                item.path("score").asDouble(),
+                payload.path("text").asString(null)
             ));
         }
         return hits;

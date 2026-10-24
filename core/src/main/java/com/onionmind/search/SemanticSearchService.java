@@ -16,8 +16,8 @@ import java.util.Optional;
 
 /**
  * Query-time half of Fase 2 semantic search (master-sdd sec. 8.1): embeds the query, asks
- * Qdrant for the nearest chunks, then re-hydrates page metadata from Postgres — Qdrant only
- * ever stores url + chunk_index, never the page's own data.
+ * Qdrant for the nearest chunks, then re-hydrates page metadata from Postgres — Qdrant
+ * stores the chunk (url, chunk_index, text), never the page's metadata.
  *
  * VectorStore/AIOrchestrator are optional because both are @ConditionalOnProperty on
  * embedding.enabled — with it off (Fase 1 behavior), no bean of either type exists.
@@ -57,8 +57,16 @@ public class SemanticSearchService {
     }
 
     public List<SearchResult> search(String query, int topK) {
+        return hydrate(bestChunks(query, topK)).stream().limit(topK).toList();
+    }
+
+    /**
+     * The best chunk of each page above min-score, best first — the chat cites its text
+     * (phase5-rag-chat D4). Empty when semantic search is unavailable.
+     */
+    Map<String, SemanticSearchHit> bestChunks(String query, int topK) {
         if (!isAvailable()) {
-            return List.of();
+            return Map.of();
         }
 
         var ctx = new TaskContext(TaskContext.TaskType.EMBED, query.length() / 4, null, false, true, null, 0);
@@ -76,35 +84,38 @@ public class SemanticSearchService {
 
         // Qdrant's k-NN always returns topK nearest points, even when nothing is actually
         // relevant (e.g. a small corpus) — drop anything below the relevance floor.
-        Map<String, Double> bestScoreByUrl = new LinkedHashMap<>();
+        Map<String, SemanticSearchHit> bestByUrl = new LinkedHashMap<>();
         for (SemanticSearchHit hit : hits) {
             if (hit.score() >= minScore) {
-                bestScoreByUrl.merge(hit.url(), hit.score(), Math::max);
+                bestByUrl.merge(hit.url(), hit, (a, b) -> a.score() >= b.score() ? a : b);
             }
         }
-        if (bestScoreByUrl.isEmpty()) {
-            return List.of();
-        }
-
-        return hydrate(bestScoreByUrl).stream().limit(topK).toList();
+        return bestByUrl;
     }
 
-    private List<SearchResult> hydrate(Map<String, Double> scoreByUrl) {
-        List<String> urls = new ArrayList<>(scoreByUrl.keySet());
+    /**
+     * Page metadata for the hits, best score first. A quarantined page keeps its row (without
+     * text) and may still have points from before — it never comes back.
+     */
+    List<SearchResult> hydrate(Map<String, SemanticSearchHit> hitsByUrl) {
+        if (hitsByUrl.isEmpty()) {
+            return List.of();
+        }
+        List<String> urls = new ArrayList<>(hitsByUrl.keySet());
         String placeholders = String.join(",", urls.stream().map(u -> "?").toList());
 
         List<SearchResult> rows = jdbc.query("""
             SELECT id, url, source_type, extracted_text, version, first_seen_at, last_seen_at,
                    summary->>'text' AS summary, category->>'category' AS category
             FROM pages
-            WHERE url IN (%s)
+            WHERE url IN (%s) AND ai_status <> 'quarantined'
             """.formatted(placeholders),
             (rs, rowNum) -> {
                 String url = rs.getString("url");
                 return new SearchResult(
                     rs.getLong("id"), url, rs.getString("source_type"),
                     snippetOf(rs.getString("extracted_text")),
-                    scoreByUrl.get(url),
+                    hitsByUrl.get(url).score(),
                     rs.getInt("version"),
                     rs.getTimestamp("first_seen_at").toInstant(),
                     rs.getTimestamp("last_seen_at").toInstant(),

@@ -56,7 +56,7 @@ class SemanticSearchServiceTest {
     @Test
     void hydratesVectorHitsWithPageMetadataFromPostgres() {
         insertPage("http://concept.onion", "conteudo sobre moeda digital anonima");
-        var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://concept.onion", 0, 0.87)));
+        var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://concept.onion", 0, 0.87, null)));
         var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
 
         var results = service.search("criptomoedas", 5);
@@ -74,7 +74,7 @@ class SemanticSearchServiceTest {
         enrich("http://enriched.onion",
             "{\"text\":\"um resumo curto\",\"confidence\":0.9}",
             "{\"category\":\"marketplace\",\"confidence\":0.8}");
-        var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://enriched.onion", 0, 0.8)));
+        var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://enriched.onion", 0, 0.8, null)));
         var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
 
         var results = service.search("mercado", 5);
@@ -87,8 +87,8 @@ class SemanticSearchServiceTest {
     void keepsBestScorePerUrlWhenMultipleChunksMatch() {
         insertPage("http://multi.onion", "texto longo com dois chunks relevantes");
         var store = new FakeVectorStore(List.of(
-            new SemanticSearchHit("http://multi.onion", 0, 0.4),
-            new SemanticSearchHit("http://multi.onion", 1, 0.9)
+            new SemanticSearchHit("http://multi.onion", 0, 0.4, null),
+            new SemanticSearchHit("http://multi.onion", 1, 0.9, null)
         ));
         var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
 
@@ -103,7 +103,7 @@ class SemanticSearchServiceTest {
         // Qdrant's k-NN always returns topK nearest points, even when nothing is relevant —
         // the service must apply its own relevance floor rather than trusting every hit.
         insertPage("http://unrelated.onion", "completely unrelated content");
-        var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://unrelated.onion", 0, 0.2)));
+        var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://unrelated.onion", 0, 0.2, null)));
         var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
 
         assertThat(service.search("query", 5)).isEmpty();
@@ -112,10 +112,21 @@ class SemanticSearchServiceTest {
     @Test
     void hitsAtOrAboveMinScoreAreKept() {
         insertPage("http://relevant.onion", "relevant content");
-        var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://relevant.onion", 0, 0.5)));
+        var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://relevant.onion", 0, 0.5, null)));
         var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
 
         assertThat(service.search("query", 5)).hasSize(1);
+    }
+
+    @Test
+    void quarantinedPageIsDroppedEvenWithPointsLeftInTheIndex() {
+        insertPage("http://quarantined.onion", "texto que foi para a quarentena depois de embeddado");
+        jdbc.update("UPDATE pages SET extracted_text = NULL, ai_status = 'quarantined' WHERE url = ?",
+            "http://quarantined.onion");
+        var store = new FakeVectorStore(List.of(new SemanticSearchHit("http://quarantined.onion", 0, 0.9, "chunk")));
+        var service = new SemanticSearchService(Optional.of(store), Optional.of(new FakeAIOrchestrator()), jdbc, 0.5);
+
+        assertThat(service.search("query", 5)).isEmpty();
     }
 
     @Test
@@ -126,7 +137,7 @@ class SemanticSearchServiceTest {
         assertThat(service.search("nothing matches", 5)).isEmpty();
     }
 
-    private static class FakeAIOrchestrator implements AIOrchestrator {
+    static class FakeAIOrchestrator implements AIOrchestrator {
         @Override
         public Summary summarize(String text, TaskContext ctx) {
             throw new UnsupportedOperationException();
@@ -158,7 +169,7 @@ class SemanticSearchServiceTest {
         }
     }
 
-    private static class FakeVectorStore implements VectorStore {
+    static class FakeVectorStore implements VectorStore {
         private final List<SemanticSearchHit> hits;
 
         FakeVectorStore(List<SemanticSearchHit> hits) {

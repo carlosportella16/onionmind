@@ -11,7 +11,10 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
-/** GET-only HTTP helper shared by the acceptance and smoke glue. {@code json} is null for non-JSON bodies. */
+/**
+ * HTTP helper shared by the acceptance and smoke glue: GET, plus POST for {@code /api/chat},
+ * which reads only. {@code json} is null for non-JSON bodies.
+ */
 public record HttpJson(int status, String body, JsonNode json) {
 
     private static final HttpClient CLIENT = HttpClient.newBuilder()
@@ -20,13 +23,23 @@ public record HttpJson(int status, String body, JsonNode json) {
     private static final JsonMapper MAPPER = JsonMapper.builder().build();
 
     public static HttpJson get(String url) {
+        return send(HttpRequest.newBuilder(URI.create(url)).GET(), "GET " + url);
+    }
+
+    /** POSTs {@code body} serialized as JSON. */
+    public static HttpJson post(String url, Object body) {
+        return send(HttpRequest.newBuilder(URI.create(url))
+            .header("Content-Type", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(body))), "POST " + url);
+    }
+
+    private static HttpJson send(HttpRequest.Builder request, String what) {
         try {
-            HttpResponse<String> response = CLIENT.send(
-                HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(30)).GET().build(),
+            HttpResponse<String> response = CLIENT.send(request.timeout(Duration.ofSeconds(30)).build(),
                 HttpResponse.BodyHandlers.ofString());
             return new HttpJson(response.statusCode(), response.body(), parse(response.body()));
         } catch (Exception e) {
-            throw new IllegalStateException("GET " + url + " failed (is the instance up?): " + e, e);
+            throw new IllegalStateException(what + " failed (is the instance up?): " + e, e);
         }
     }
 

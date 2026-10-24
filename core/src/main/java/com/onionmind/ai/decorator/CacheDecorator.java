@@ -1,6 +1,7 @@
 package com.onionmind.ai.decorator;
 
 import com.onionmind.ai.TaskContext.TaskType;
+import com.onionmind.ai.provider.CompletionRequest;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -15,9 +16,11 @@ import java.util.HexFormat;
 import java.util.Optional;
 
 /**
- * Redis cache of validated AI results, keyed by {@code (task type, sha256(text))} — not by
- * provider (D7/D8): any provider's answer for the same text and task is interchangeable.
- * Covers job restarts and overlapping backfill runs.
+ * Redis cache of validated AI results, keyed by {@code (task type, sha256(system prompt + text))}
+ * — not by provider (D7/D8): any provider's answer for the same prompt, text and task is
+ * interchangeable. The prompt is in the key so a prompt change (or translate's target language)
+ * never serves an answer made for the old one; old entries just expire by TTL
+ * (fix-ai-cache-prompt-version). Covers job restarts and overlapping backfill runs.
  */
 @Component
 @ConditionalOnExpression("${ai.enabled:false}")
@@ -32,8 +35,8 @@ public class CacheDecorator {
         this.ttl = ttl;
     }
 
-    public Optional<ValidatedResult> get(TaskType type, String text) {
-        String cached = redis.opsForValue().get(key(type, text));
+    public Optional<ValidatedResult> get(TaskType type, CompletionRequest request) {
+        String cached = redis.opsForValue().get(key(type, request));
         if (cached == null) {
             return Optional.empty();
         }
@@ -44,16 +47,17 @@ public class CacheDecorator {
         }
     }
 
-    public void put(TaskType type, String text, ValidatedResult result) {
+    public void put(TaskType type, CompletionRequest request, ValidatedResult result) {
         try {
-            redis.opsForValue().set(key(type, text), mapper.writeValueAsString(result), ttl);
+            redis.opsForValue().set(key(type, request), mapper.writeValueAsString(result), ttl);
         } catch (Exception e) {
             // cache write failure must never fail the task
         }
     }
 
-    private String key(TaskType type, String text) {
-        return "ai-cache:%s:%s".formatted(type, sha256(text));
+    private String key(TaskType type, CompletionRequest request) {
+        String prompt = request.systemPrompt() == null ? "" : request.systemPrompt();
+        return "ai-cache:%s:%s".formatted(type, sha256(prompt + "\n" + request.userPrompt()));
     }
 
     private static String sha256(String text) {

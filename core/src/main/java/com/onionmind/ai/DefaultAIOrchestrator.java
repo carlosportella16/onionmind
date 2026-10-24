@@ -87,28 +87,28 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
     @Override
     public Summary summarize(String text, TaskContext ctx) {
         CompletionRequest request = new CompletionRequest(SUMMARIZE_PROMPT, text);
-        ValidatedResult r = execute(text, request, ctx);
+        ValidatedResult r = execute(request, ctx);
         return new Summary(r.primary(), r.confidence());
     }
 
     @Override
     public Classification classify(String text, TaskContext ctx) {
         CompletionRequest request = new CompletionRequest(CLASSIFY_PROMPT, text);
-        ValidatedResult r = execute(text, request, ctx);
+        ValidatedResult r = execute(request, ctx);
         return new Classification(r.primary(), r.confidence());
     }
 
     @Override
     public Translation translate(String text, String targetLang, TaskContext ctx) {
         CompletionRequest request = new CompletionRequest(TRANSLATE_PROMPT.formatted(targetLang), text);
-        ValidatedResult r = execute(text, request, ctx);
+        ValidatedResult r = execute(request, ctx);
         return new Translation(r.primary(), r.secondary(), r.confidence());
     }
 
     @Override
     public LanguageDetection detectLanguage(String text, TaskContext ctx) {
         CompletionRequest request = new CompletionRequest(DETECT_LANGUAGE_PROMPT, text);
-        ValidatedResult r = execute(text, request, ctx);
+        ValidatedResult r = execute(request, ctx);
         return new LanguageDetection(r.primary(), r.confidence());
     }
 
@@ -121,7 +121,7 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
     @Override
     public EntityExtraction extractEntities(String text, TaskContext ctx) {
         CompletionRequest request = new CompletionRequest(EXTRACT_ENTITIES_PROMPT, text);
-        ValidatedResult r = execute(text, request, ctx);
+        ValidatedResult r = execute(request, ctx);
         List<NamedEntity> parsed = ENTITY_LIST.readValue(r.primary());
         List<NamedEntity> entities = parsed.stream()
             .filter(e -> e.confidence() >= minConfidence)
@@ -134,8 +134,8 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
         return embedder.embed(text);
     }
 
-    private ValidatedResult execute(String cacheText, CompletionRequest request, TaskContext ctx) {
-        var cached = cache.get(ctx.type(), cacheText);
+    private ValidatedResult execute(CompletionRequest request, TaskContext ctx) {
+        var cached = cache.get(ctx.type(), request);
         if (cached.isPresent()) {
             metrics.recordOutcome("cache", ctx.type(), "cache_hit");
             return cached.get();
@@ -166,7 +166,7 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
             }
             if (validated.usable() && validated.confidence() >= minConfidence) {
                 metrics.recordOutcome(provider.id(), ctx.type(), "ok");
-                cache.put(ctx.type(), cacheText, validated);
+                cache.put(ctx.type(), request, validated);
                 return validated;
             }
             current = current.withPreviousConfidence(validated.confidence());
@@ -174,7 +174,7 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
 
         if (best != null && best.usable()) {
             metrics.recordOutcome("none", ctx.type(), "low_confidence");
-            cache.put(ctx.type(), cacheText, best);
+            cache.put(ctx.type(), request, best);
             return best;
         }
 

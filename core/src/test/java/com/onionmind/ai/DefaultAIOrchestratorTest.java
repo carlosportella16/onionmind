@@ -113,12 +113,35 @@ class DefaultAIOrchestratorTest {
 
     @Test
     void cacheHitSkipsEveryProvider() {
-        cache.put(TaskContext.TaskType.SUMMARIZE, TEXT, new ValidatedResult("do cache", null, 0.95));
+        cache.put(TaskContext.TaskType.SUMMARIZE, new CompletionRequest(DefaultAIOrchestrator.SUMMARIZE_PROMPT, TEXT),
+            new ValidatedResult("do cache", null, 0.95));
 
         Summary summary = orchestrator.summarize(TEXT, shortCtx());
 
         assertThat(summary.text()).isEqualTo("do cache");
         assertThat(ollama.calls()).isZero();
+    }
+
+    @Test
+    void repeatedSummaryIsServedFromTheCache() {
+        ollama.script(ok("{\"summary\":\"bom resumo\",\"confidence\":0.85}"));
+
+        orchestrator.summarize(TEXT, shortCtx());
+        Summary second = orchestrator.summarize(TEXT, shortCtx());
+
+        assertThat(second.text()).isEqualTo("bom resumo");
+        assertThat(ollama.calls()).isEqualTo(1);
+    }
+
+    @Test
+    void translationsToDifferentLanguagesDoNotShareACacheEntry() {
+        ollama.script(ok("{\"translation\":\"texto traduzido\",\"detectedLanguage\":\"pt\",\"confidence\":0.9}"));
+        TaskContext ctx = TaskContext.batch(TaskContext.TaskType.TRANSLATE, 100, "pt", false);
+
+        orchestrator.translate(TEXT, "pt", ctx);
+        orchestrator.translate(TEXT, "en", ctx);
+
+        assertThat(ollama.calls()).isEqualTo(2);
     }
 
     @Test

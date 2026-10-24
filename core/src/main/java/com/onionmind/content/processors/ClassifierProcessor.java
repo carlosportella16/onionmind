@@ -4,6 +4,7 @@ import com.onionmind.ai.AIOrchestrator;
 import com.onionmind.ai.Classification;
 import com.onionmind.ai.TaskContext;
 import com.onionmind.content.AiEnrichmentGate;
+import com.onionmind.content.Categories;
 import com.onionmind.content.Document;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -21,8 +22,7 @@ import java.util.Set;
 @ConditionalOnProperty(prefix = "ai", name = "enabled", havingValue = "true")
 public class ClassifierProcessor extends AbstractAiProcessor {
 
-    static final Set<String> TAXONOMY =
-        Set.of("marketplace", "forum", "blog", "service", "institutional", "other");
+    static final Set<String> TAXONOMY = Categories.TAXONOMY;
 
     public ClassifierProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate) {
         super(orchestrator, gate);

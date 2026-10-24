@@ -37,6 +37,9 @@ abstract class AbstractAiProcessor implements AiEnrichingProcessor {
         }
         try {
             return ProcessingResult.success(enrich(document, text));
+        } catch (PartialFailure e) {
+            log.warn("{} partially failed for {}: {}", getClass().getSimpleName(), document.url(), e.getMessage());
+            return ProcessingResult.failed(e.partial, getClass().getSimpleName() + ": " + e.getMessage());
         } catch (RuntimeException e) {
             log.warn("{} failed for {}: {}", getClass().getSimpleName(), document.url(), e.getMessage());
             return ProcessingResult.failed(document, getClass().getSimpleName() + ": " + e.getMessage());
@@ -54,4 +57,17 @@ abstract class AbstractAiProcessor implements AiEnrichingProcessor {
     }
 
     protected abstract Document enrich(Document document, String text);
+
+    /**
+     * Thrown by {@link #enrich} when part of the work succeeded: the step still FAILS (so the
+     * backfill retries it), but carries the partial document instead of dropping it.
+     */
+    protected static final class PartialFailure extends RuntimeException {
+        private final transient Document partial;
+
+        PartialFailure(Document partial, RuntimeException cause) {
+            super(cause.getMessage(), cause);
+            this.partial = partial;
+        }
+    }
 }

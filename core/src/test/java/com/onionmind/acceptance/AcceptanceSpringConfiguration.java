@@ -26,6 +26,11 @@ import org.testcontainers.neo4j.Neo4jContainer;
     "ai.retry.backoff=10ms",
     "ai.openai-compatible.deepseek.api-key=acceptance-test-key",
     "ai.gemini.api-key=acceptance-test-key",
+    // Scenarios must not depend on the real tier's ceilings in application.yml: at the free
+    // tier's 15 RPM a multi-page scenario spills to DeepSeek depending on the runner's speed.
+    "ai.providers.gemini.requests-per-minute=1000",
+    "ai.providers.gemini.requests-per-day=100000",
+    "ai.providers.gemini.tokens-per-minute=10000000",
     "embedding.dimensions=" + FakeAiProviders.DIMENSIONS,
     // ~100 chars per chunk, so a page with a few hundred chars spans several chunks
     "embedding.chunk-size=25",

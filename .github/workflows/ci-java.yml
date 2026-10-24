@@ -15,7 +15,7 @@ jobs:
 
       - name: Run tests with coverage
         working-directory: core
-        run: ./gradlew clean test jacocoTestReport -q
+        run: ./gradlew clean test jacocoTestReport  # no -q: it hides the names of failed tests
 
       - name: Check coverage threshold
         working-directory: core

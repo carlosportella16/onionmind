@@ -3,6 +3,7 @@ package frontier
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -110,8 +111,29 @@ func TestExtractLinks_AhmiaListingExcerpt(t *testing.T) {
 	}
 }
 
+func TestEnqueue_CapsLinksPerPage(t *testing.T) {
+	// 5000 distinct v3 addresses in a <br> listing; only the first 2000 are queued.
+	var page strings.Builder
+	var want []string
+	for i := range 5000 {
+		host := fmt.Sprintf("%056d", i) // digits 0,1,8,9 aren't base32: map to letters
+		host = strings.NewReplacer("0", "a", "1", "b", "8", "c", "9", "d").Replace(host) + ".onion"
+		fmt.Fprintf(&page, "  http://%s/<br>\n", host)
+		if i < 2000 {
+			want = append(want, "http://"+host+"/")
+		}
+	}
+	f := New(nil, 10000, 3, 2000, nil)
+
+	f.Enqueue(0, []byte(page.String()), "http://ahmia.fi/onions/")
+
+	if got := drain(f); !slices.Equal(got, want) {
+		t.Fatalf("enqueued %d links, want the first %d", len(got), len(want))
+	}
+}
+
 func TestEnqueue_SkipsBannedHosts(t *testing.T) {
-	f := New(nil, 10, 3, banning(t, hostB))
+	f := New(nil, 10, 3, 100, banning(t, hostB))
 	html := []byte(`<a href="http://` + hostA + `/">a</a> <a href="HTTPS://` + hostB + `/x">b</a>`)
 
 	f.Enqueue(0, html, "http://base.onion/")
@@ -122,7 +144,7 @@ func TestEnqueue_SkipsBannedHosts(t *testing.T) {
 }
 
 func TestEnqueue_OnlyOnionLinksAdded(t *testing.T) {
-	f := New(nil, 10, 3, nil)
+	f := New(nil, 10, 3, 100, nil)
 	html := []byte(`<html><body>
 		<a href="http://other.onion/page">onion</a>
 		<a href="https://clearnet.com">clearnet</a>
@@ -148,7 +170,7 @@ func TestEnqueue_OnlyOnionLinksAdded(t *testing.T) {
 }
 
 func TestEnqueue_RespectsMaxDepth(t *testing.T) {
-	f := New(nil, 10, 2, nil)
+	f := New(nil, 10, 2, 100, nil)
 	html := []byte(`<a href="http://deep.onion/page">deep</a>`)
 
 	// parentDepth already at maxDepth — link must not be enqueued.
@@ -162,7 +184,7 @@ func TestEnqueue_RespectsMaxDepth(t *testing.T) {
 }
 
 func TestEnqueue_FullQueueDoesNotBlock(t *testing.T) {
-	f := New(nil, 1, 5, nil)
+	f := New(nil, 1, 5, 100, nil)
 	f.queue <- URLJob{URL: "http://filler.onion/", Depth: 0} // fill the only slot
 
 	html := []byte(`<a href="http://other.onion/page">onion</a>`)

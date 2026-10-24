@@ -67,7 +67,7 @@ func initializeScenario(sc *godog.ScenarioContext) {
 			Crawler: config.CrawlerConfig{
 				Workers: 2, FetchTimeout: config.Duration(5 * time.Second), MaxPageSizeMB: 10,
 				CircuitBreaker:   config.CircuitBreakerConfig{ConsecutiveFailures: 3, Timeout: config.Duration(30 * time.Second)},
-				HostDenylistPath: filepath.Join(env.tmpDir, topic+".md5"),
+				HostDenylistPath: filepath.Join(env.tmpDir, topic+".md5"), MaxLinksPerPage: 2000,
 			},
 			Tor:      config.TorConfig{SocksAddr: env.socks.Addr()},
 			Redis:    config.RedisConfig{Addr: env.redisAddr, DedupTTL: config.Duration(time.Hour)},

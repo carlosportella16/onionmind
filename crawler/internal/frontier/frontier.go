@@ -1,6 +1,7 @@
 package frontier
 
 import (
+	"log/slog"
 	"net/url"
 	"regexp"
 	"strings"
@@ -14,9 +15,10 @@ import (
 // It is not persistent — if the crawler restarts, it starts over from the seeds.
 // Persistence (Redis sorted set) is a future-phase optimization.
 type Frontier struct {
-	queue    chan URLJob
-	maxDepth int
-	deny     *denylist.Denylist
+	queue           chan URLJob
+	maxDepth        int
+	maxLinksPerPage int
+	deny            *denylist.Denylist
 }
 
 type URLJob struct {
@@ -25,12 +27,14 @@ type URLJob struct {
 }
 
 // New queues the seeds as given; banned seeds are dropped by the worker before fetch.
-// Discovered links to hosts on deny are never queued (nil deny bans nothing).
-func New(seeds []string, maxQueueSize, maxDepth int, deny *denylist.Denylist) *Frontier {
+// Discovered links to hosts on deny are never queued (nil deny bans nothing), and one page
+// queues at most maxLinksPerPage links so a big listing cannot take over the queue.
+func New(seeds []string, maxQueueSize, maxDepth, maxLinksPerPage int, deny *denylist.Denylist) *Frontier {
 	f := &Frontier{
-		queue:    make(chan URLJob, maxQueueSize),
-		maxDepth: maxDepth,
-		deny:     deny,
+		queue:           make(chan URLJob, maxQueueSize),
+		maxDepth:        maxDepth,
+		maxLinksPerPage: maxLinksPerPage,
+		deny:            deny,
 	}
 	for _, s := range seeds {
 		f.queue <- URLJob{URL: s, Depth: 0}
@@ -40,16 +44,22 @@ func New(seeds []string, maxQueueSize, maxDepth int, deny *denylist.Denylist) *F
 
 func (f *Frontier) Jobs() <-chan URLJob { return f.queue }
 
-// Enqueue adds URLs discovered within a page, if within maxDepth.
+// Enqueue adds the first maxLinksPerPage distinct .onion links of a page, if within maxDepth.
 func (f *Frontier) Enqueue(parentDepth int, rawHTML []byte, baseURL string) {
 	if parentDepth >= f.maxDepth {
 		return
 	}
 	links := extractLinks(rawHTML, baseURL)
+	taken := 0
 	for _, link := range links {
 		if !isOnion(link) || f.deny.Banned(link) {
 			continue
 		}
+		if taken == f.maxLinksPerPage {
+			slog.Info("page links capped", "url", baseURL, "links", len(links), "max_links_per_page", f.maxLinksPerPage)
+			return
+		}
+		taken++
 		select {
 		case f.queue <- URLJob{URL: link, Depth: parentDepth + 1}:
 		default:

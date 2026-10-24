@@ -45,7 +45,7 @@ func Run(ctx context.Context, cfg *config.Config) error {
 	}
 	defer pub.Close()
 
-	f := frontier.New(cfg.Frontier.Seeds, cfg.Frontier.MaxQueueSize, cfg.Frontier.MaxDepth, deny)
+	f := frontier.New(cfg.Frontier.Seeds, cfg.Frontier.MaxQueueSize, cfg.Frontier.MaxDepth, cfg.Crawler.MaxLinksPerPage, deny)
 
 	slog.Info("starting crawler", "workers", cfg.Crawler.Workers, "seeds", len(cfg.Frontier.Seeds))
 	worker.New(cfg.Crawler.Workers, tor, d, pub, f, deny, cfg.Crawler.PolitenessDelay.Duration()).Run(ctx)

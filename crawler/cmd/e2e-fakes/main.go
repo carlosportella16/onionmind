@@ -1,6 +1,7 @@
 // Command e2e-fakes stands in for everything external in the end-to-end smoke stack
 // (e2e/docker-compose.e2e.yml): the Tor network (SOCKS5 on :1080), the .onion sites
-// behind it (:8080) and Ollama (:11434). Test infrastructure, not shipped.
+// behind it (:8080) and the AI providers, Gemini and DeepSeek (:8090). Test infrastructure,
+// not shipped.
 package main
 
 import (
@@ -51,14 +52,14 @@ func main() {
 	}
 
 	go serve(":8080", sites)
-	go serve(":11434", ollamaHandler())
+	go serve(":8090", aiHandler())
 
 	socks, err := testfakes.NewSOCKS5Server(":1080", "127.0.0.1:8080")
 	if err != nil {
 		slog.Error("socks5 listen failed", "err", err)
 		os.Exit(1)
 	}
-	slog.Info("e2e fakes up", "socks5", socks.Addr(), "sites", ":8080", "ollama", ":11434")
+	slog.Info("e2e fakes up", "socks5", socks.Addr(), "sites", ":8080", "ai", ":8090")
 	select {}
 }
 

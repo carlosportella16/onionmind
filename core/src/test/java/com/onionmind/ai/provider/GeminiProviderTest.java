@@ -29,7 +29,7 @@ class GeminiProviderTest {
         RedisTestSupport.flushAll();
         server = new FakeHttpServer();
         tracker = new ProviderQuotaTracker(redis, Clock.systemUTC(),
-            Map.of("gemini", new ProviderLimits(10000, 1000)));
+            Map.of("gemini", new ProviderLimits(10000, 1000, 0, 0)));
         provider = new GeminiProvider(server.baseUrl(), "gemini-2.5-flash-lite", "test-key", tracker);
     }
 
@@ -52,6 +52,16 @@ class GeminiProviderTest {
         assertThat(body.at("/generationConfig/responseMimeType").asString()).isEqualTo("application/json");
         assertThat(body.at("/generationConfig/thinkingConfig/thinkingBudget").asInt(-1)).isZero();
         assertThat(response.text()).isEqualTo("{}");
+    }
+
+    @Test
+    void readsTheReportedTokenUsageWhenPresent() {
+        server.responseBody = "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"{}\"}]}}],"
+            + "\"usageMetadata\":{\"promptTokenCount\":2000,\"totalTokenCount\":2150}}";
+        assertThat(provider.complete(new CompletionRequest("hi")).totalTokens()).isEqualTo(2150);
+
+        server.responseBody = "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"{}\"}]}}]}";
+        assertThat(provider.complete(new CompletionRequest("hi")).totalTokens()).isNull();
     }
 
     @Test

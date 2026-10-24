@@ -51,6 +51,8 @@ public class OpenAiCompatibleProvider extends HttpAIProvider {
 
         JsonNode root = postJson(settings.baseUrl() + "/chat/completions",
             Map.of("Authorization", "Bearer " + apiKey), body);
-        return new CompletionResponse(root.path("choices").path(0).path("message").path("content").asString(""));
+        JsonNode tokens = root.path("usage").path("total_tokens");
+        return new CompletionResponse(root.path("choices").path(0).path("message").path("content").asString(""),
+            tokens.isNumber() ? tokens.asInt() : null);
     }
 }

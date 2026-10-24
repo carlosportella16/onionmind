@@ -65,6 +65,15 @@ class OpenAiCompatibleProviderTest {
 
     /** DeepSeek's JSON mode "may occasionally return empty content" — the ValidationDecorator rejects it. */
     @Test
+    void readsTheReportedTokenUsageWhenPresent() {
+        server.responseBody = "{\"choices\":[{\"message\":{\"content\":\"{}\"}}],\"usage\":{\"total_tokens\":980}}";
+        assertThat(provider.complete(new CompletionRequest("hi")).totalTokens()).isEqualTo(980);
+
+        server.responseBody = "{\"choices\":[{\"message\":{\"content\":\"{}\"}}]}";
+        assertThat(provider.complete(new CompletionRequest("hi")).totalTokens()).isNull();
+    }
+
+    @Test
     void emptyContentComesBackAsEmptyText() {
         server.responseBody = "{\"choices\":[{\"message\":{\"content\":\"\"}}]}";
 

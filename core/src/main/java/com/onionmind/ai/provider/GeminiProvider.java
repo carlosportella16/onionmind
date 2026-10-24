@@ -56,7 +56,8 @@ public class GeminiProvider extends HttpAIProvider {
             Map.of("x-goog-api-key", apiKey), body);
         String text = root.path("candidates").path(0).path("content").path("parts").path(0)
             .path("text").asString("");
-        return new CompletionResponse(text);
+        JsonNode tokens = root.path("usageMetadata").path("totalTokenCount");
+        return new CompletionResponse(text, tokens.isNumber() ? tokens.asInt() : null);
     }
 
     /**

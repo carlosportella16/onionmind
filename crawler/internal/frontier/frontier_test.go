@@ -5,6 +5,9 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -43,6 +46,68 @@ func banning(t *testing.T, hosts ...string) *denylist.Denylist {
 		t.Fatal(err)
 	}
 	return d
+}
+
+func TestExtractLinks(t *testing.T) {
+	cases := []struct {
+		name string
+		html string
+		want []string
+	}{
+		{
+			name: "<br> listing without anchors",
+			html: "<html><body>\n  http://" + hostA + "/<br>\n  http://" + hostB + "/<br>\n</body></html>",
+			want: []string{"http://" + hostA + "/", "http://" + hostB + "/"},
+		},
+		{
+			name: "address without scheme or path becomes http root",
+			html: "<p>Mirror at " + hostA + ". Also https://" + hostB + "/forum/t?id=1 here.</p>",
+			want: []string{"http://" + hostA + "/", "https://" + hostB + "/forum/t?id=1"},
+		},
+		{
+			name: "addresses in script, style and comments are ignored",
+			html: "<script>var u='http://" + hostA + "/'</script><style>/* " + hostA + " */</style><!-- " + hostA + " --><p>" + hostB + "</p>",
+			want: []string{"http://" + hostB + "/"},
+		},
+		{
+			name: "href also present in text is not duplicated",
+			html: `<a href="http://` + hostA + `/">http://` + hostA + `/</a> ` + hostA + ` <a href="/rel">rel</a>`,
+			want: []string{"http://" + hostA + "/", "http://base.onion/rel"},
+		},
+		{
+			name: "v2-length and over-long base32 runs are not addresses",
+			html: "<p>abcdefgh234567ab.onion x" + hostA + "</p>",
+			want: nil,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := extractLinks([]byte(c.html), "http://base.onion/"); !slices.Equal(got, c.want) {
+				t.Errorf("extractLinks = %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+// The fixture mirrors the shape of ahmia's /onions/ (synthetic hosts): every line is a link.
+func TestExtractLinks_AhmiaListingExcerpt(t *testing.T) {
+	data, err := os.ReadFile("testdata/ahmia-onions-excerpt.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := regexp.MustCompile(`http://[a-z2-7]{56}\.onion/<br>`).FindAll(data, -1)
+	if len(lines) < 10 {
+		t.Fatalf("fixture has %d listing lines, want 10-20", len(lines))
+	}
+	got := extractLinks(data, "http://ahmia.fi/onions/")
+	if len(got) != len(lines) {
+		t.Fatalf("extracted %d links from %d listing lines: %v", len(got), len(lines), got)
+	}
+	for i, line := range lines {
+		if want := strings.TrimSuffix(string(line), "<br>"); got[i] != want {
+			t.Errorf("link %d = %q, want %q", i, got[i], want)
+		}
+	}
 }
 
 func TestEnqueue_SkipsBannedHosts(t *testing.T) {

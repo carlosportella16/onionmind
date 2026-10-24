@@ -165,7 +165,7 @@ Verificação por mutação: o filtro trivial, a guarda de versão do grafo, o c
 
 **Limite aceito.** As versões v1 eram anteriores à Fase 4 e não tinham snapshot de enriquecimento. Por isso o diff dessas mudanças traz só o delta de texto, sem delta de entidades nem troca de categoria (`category_from` nulo), como o design D7 prevê.
 
-Itens 1–3 eram segue-adiante (não bloqueavam o gate, que foi atingido) e foram resolvidos no change `fix-real-infra-findings` (`openspec/changes/fix-real-infra-findings/`). O Tor novo foi validado de verdade: bootstrap a 100% em ~15 s sem o aviso de protocolos, e o crawler publicou as duas seeds (`ahmia.fi` e a `.onion`). O ciclo real de backfill com as páginas de 1 a 2 MB foi rodado em 2026-10-24 (seção 9.2). Os itens 4–6 continuam em aberto.
+Itens 1–3 eram segue-adiante (não bloqueavam o gate, que foi atingido) e foram resolvidos no change `fix-real-infra-findings` (`openspec/changes/archive/2026-10-24-fix-real-infra-findings/`). O Tor novo foi validado de verdade: bootstrap a 100% em ~15 s sem o aviso de protocolos, e o crawler publicou as duas seeds (`ahmia.fi` e a `.onion`). O ciclo real de backfill com as páginas de 1 a 2 MB foi rodado em 2026-10-24 (seção 9.2). Os itens 4–6 continuam em aberto.
 
 ### 9.2 Ciclo real dos fixes — 2026-10-24 (Tor real, Groq + Gemini reais, Ollama local; chaves de dev revogadas depois do teste)
 

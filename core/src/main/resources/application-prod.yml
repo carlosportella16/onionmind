@@ -68,3 +68,7 @@ illegal-content:
   url-denylist-path: ${ONION_DENYLIST_PATH:classpath:security/onion-denylist.txt}
   text-pattern-path: ${ILLEGAL_TEXT_PATTERN_PATH:classpath:security/illegal-text-patterns.txt}
   quarantine-retention-days: 30
+
+# Phase 4: same shape as application.yml; Neo4j credentials (AuraDB) come from env.
+graph:
+  enabled: ${GRAPH_ENABLED:false}

@@ -28,25 +28,27 @@ class SchedulingPoolSizeTest {
     private TaskScheduler taskScheduler;
 
     @Test
-    void aSecondScheduledTaskRunsWithoutWaitingForALongFirstOneToFinish() throws InterruptedException {
-        CountDownLatch bothStarted = new CountDownLatch(2);
-        CountDownLatch releaseFirst = new CountDownLatch(1);
+    void everyScheduledJobGetsItsOwnThread() throws InterruptedException {
+        // AiEnrichmentBackfillJob, EmbeddingBackfillJob, ChangeSummaryJob, EventResubmissionJob.
+        int jobs = 4;
+        CountDownLatch allStarted = new CountDownLatch(jobs);
+        CountDownLatch release = new CountDownLatch(1);
 
-        taskScheduler.schedule(() -> {
-            bothStarted.countDown();
-            try {
-                releaseFirst.await(2, TimeUnit.SECONDS);
-            } catch (InterruptedException ignored) {
-            }
-        }, Instant.now());
+        for (int i = 0; i < jobs; i++) {
+            taskScheduler.schedule(() -> {
+                allStarted.countDown();
+                try {
+                    release.await(2, TimeUnit.SECONDS);
+                } catch (InterruptedException ignored) {
+                }
+            }, Instant.now());
+        }
 
-        taskScheduler.schedule(bothStarted::countDown, Instant.now());
+        boolean noneQueuedBehindAnother = allStarted.await(1, TimeUnit.SECONDS);
+        release.countDown();
 
-        boolean secondTaskDidNotQueueBehindTheFirst = bothStarted.await(1, TimeUnit.SECONDS);
-        releaseFirst.countDown();
-
-        assertThat(secondTaskDidNotQueueBehindTheFirst)
-            .as("a second scheduled task must not have to wait for a slow first one to finish")
+        assertThat(noneQueuedBehindAnother)
+            .as("%d slow scheduled jobs must all be running at once", jobs)
             .isTrue();
     }
 }

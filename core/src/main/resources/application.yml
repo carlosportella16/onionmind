@@ -8,8 +8,14 @@ spring:
         # exist today (AiEnrichmentBackfillJob, EmbeddingBackfillJob) so one's long run can
         # never block the other's turn (fix-large-page-backfill-limits, found live
         # 2026-09-07: a 13-minute EmbeddingBackfillJob run starved AiEnrichmentBackfillJob
-        # completely). Revisit if a third scheduled job is ever added.
-        size: 2
+        # completely). Phase 4 adds ChangeSummaryJob and EventResubmissionJob — one thread
+        # per job, so none can starve another.
+        size: 4
+    execution:
+      pool:
+        # Runs the async @ApplicationModuleListeners (Phase 4). The queue is unbounded, so
+        # core-size is the real ceiling — it caps concurrent Postgres/Neo4j work from events.
+        core-size: 4
   datasource:
     url: jdbc:postgresql://localhost:5432/onionmind
     username: onionmind
@@ -48,10 +54,19 @@ spring:
     events:
       jdbc:
         # P2-5: creates the event_publication table so shutdown doesn't throw
-        # BadSqlGrammarException. No in-process events published yet (Phase 4 adds
-        # PageIndexedEvent, ADR-009) — this just makes the registry's own table exist.
+        # BadSqlGrammarException.
         schema-initialization:
           enabled: true
+      # Phase 4 (ADR-009): PageEnrichedEvent / PageQuarantinedEvent. Outstanding ones are
+      # redelivered on start (EventResubmissionJob covers the running app); completed ones
+      # are deleted so the registry never grows without bound.
+      republish-outstanding-events-on-restart: true
+      completion-mode: delete
+  neo4j:
+    uri: ${NEO4J_URI:bolt://localhost:7687}
+    authentication:
+      username: ${NEO4J_USERNAME:neo4j}
+      password: ${NEO4J_PASSWORD:onionmind_dev_only}
 
 server:
   port: 8081
@@ -64,6 +79,10 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+  health:
+    neo4j:
+      # Neo4j is optional (graph.enabled) — a missing graph must not mark the app DOWN.
+      enabled: ${graph.enabled:false}
 
 # Phase 2: embeddings + semantic search
 ollama:
@@ -134,3 +153,27 @@ illegal-content:
   url-denylist-path: classpath:security/onion-denylist.txt
   text-pattern-path: classpath:security/illegal-text-patterns.txt
   quarantine-retention-days: 30
+
+# Phase 4: knowledge graph (Neo4j). Off by default like embedding.enabled — with it off the
+# app never talks to Neo4j and /api/entities does not exist.
+graph:
+  enabled: false
+
+# Phase 4: EntityProcessor (order 50). Runs with ai.enabled, like the other AI processors.
+entities:
+  max-input-chars: 8000        # text sent to the LLM for named entities (regex sees it all)
+  max-per-page: 200            # also bounds the PageEnrichedEvent payload
+
+# Phase 4: change detection between versions. Runs with ai.enabled.
+intelligence:
+  diff:
+    min-changed-chars: 40      # below this (and no entity/category change) a change is trivial
+    max-text-chars: 4000       # added/removed text kept per change and sent to the summarizer
+  summary:
+    batch-size: 20
+    interval-ms: 300000
+    max-attempts: 3
+
+events:
+  resubmit-after: 10m          # incomplete event publications older than this are redelivered
+  resubmit-interval-ms: 300000

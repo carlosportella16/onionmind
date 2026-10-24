@@ -2,9 +2,13 @@ import { useState } from 'react';
 import { search, searchSemantic, type SearchResult } from './api/search';
 import { SearchBar } from './components/SearchBar';
 import { ResultList } from './components/ResultList';
+import { Chat } from './components/Chat';
 import './App.css';
 
+type Tab = 'search' | 'chat';
+
 function App() {
+  const [tab, setTab] = useState<Tab>('search');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [total, setTotal] = useState(0);
   const [hasSearched, setHasSearched] = useState(false);
@@ -26,11 +30,30 @@ function App() {
         </svg>
         <span className="app-name">onionmind</span>
         <span className="app-tagline">search the tor network</span>
+        <nav className="app-tabs">
+          {(['search', 'chat'] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              className={tab === t ? 'active' : undefined}
+              aria-pressed={tab === t}
+              onClick={() => setTab(t)}
+            >
+              {t}
+            </button>
+          ))}
+        </nav>
       </header>
 
       <main>
-        <SearchBar onSearch={handleSearch} />
-        <ResultList results={results} total={total} hasSearched={hasSearched} />
+        {tab === 'search' ? (
+          <>
+            <SearchBar onSearch={handleSearch} />
+            <ResultList results={results} total={total} hasSearched={hasSearched} />
+          </>
+        ) : (
+          <Chat />
+        )}
       </main>
     </div>
   );

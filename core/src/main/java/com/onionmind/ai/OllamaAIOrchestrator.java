@@ -41,6 +41,11 @@ public class OllamaAIOrchestrator implements AIOrchestrator {
     }
 
     @Override
+    public EntityExtraction extractEntities(String text, TaskContext ctx) {
+        throw new UnsupportedOperationException("Extração de entidades chega na Fase 4 — ligue ai.enabled");
+    }
+
+    @Override
     public Embedding embed(String text, TaskContext ctx) {
         return embedder.embed(text);
     }

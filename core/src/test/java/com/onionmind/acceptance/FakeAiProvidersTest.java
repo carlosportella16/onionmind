@@ -38,4 +38,39 @@ class FakeAiProvidersTest {
         assertThat(cosine(v, v)).isCloseTo(1.0, org.assertj.core.data.Offset.offset(1e-5));
         assertThat(cosine(embed(""), embed(""))).isCloseTo(1.0, org.assertj.core.data.Offset.offset(1e-5));
     }
+
+    @Test
+    void entityPromptReturnsOnlyTheKnownNamesPresentInTheText() throws Exception {
+        try (FakeAiProviders fakes = new FakeAiProviders()) {
+            var reply = fakes.ollama.responder.apply("/api/generate",
+                "{\"prompt\": \"Extract the named entities... Fale com Ana Souza hoje.\"}");
+
+            assertThat(reply.body()).contains("Ana Souza", "person").doesNotContain("Mercado Sombrio");
+        }
+    }
+
+    @Test
+    void marketplacesAreClassifiedByName() throws Exception {
+        try (FakeAiProviders fakes = new FakeAiProviders()) {
+            assertThat(fakes.ollama.responder.apply("/api/generate", "{\"prompt\": \"Classify the page: Mercado X\"}").body())
+                .contains("marketplace");
+            assertThat(fakes.ollama.responder.apply("/api/generate", "{\"prompt\": \"Classify the page: um blog\"}").body())
+                .contains("forum");
+        }
+    }
+
+    @Test
+    void englishPromptsGetEnglishSummariesAndDoNotSkewLanguageDetection() throws Exception {
+        try (FakeAiProviders fakes = new FakeAiProviders()) {
+            assertThat(fakes.ollama.responder.apply("/api/generate",
+                "{\"system\": \"Identify the predominant language of this text.\", \"prompt\": \"um texto curto\"}")
+                .body()).contains("\\\"pt\\\"");
+            assertThat(fakes.ollama.responder.apply("/api/generate",
+                "{\"system\": \"Identify the predominant language of this text.\", \"prompt\": \"on the network\"}")
+                .body()).contains("\\\"en\\\"");
+            assertThat(fakes.ollama.responder.apply("/api/generate",
+                "{\"system\": \"You summarize web pages in English.\", \"prompt\": \"texto\"}").body())
+                .contains("Automatic summary (ollama) of the page.");
+        }
+    }
 }

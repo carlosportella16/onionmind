@@ -3,7 +3,6 @@ package com.onionmind.ingestion.internal;
 import com.onionmind.TestcontainersConfiguration;
 import com.onionmind.ai.Classification;
 import com.onionmind.ai.Summary;
-import com.onionmind.ai.Translation;
 import com.onionmind.content.AiOutcome;
 import com.onionmind.content.Document;
 import com.onionmind.content.DocumentType;
@@ -89,12 +88,51 @@ class PageRepositoryTest {
             new EmbeddingOutcome(EmbeddingOutcome.EMBEDDED, null));
         repository.updateAiFields(url, AiOutcome.processed(new Enrichment(
             new LanguageTag("pt", 1.0), new Summary("resumo", 0.9),
-            new Classification("blog", 0.9), null)));
+            new Classification("blog", 0.9))));
 
         repository.upsertWithVersioning(doc(url, "version two, different content"));
 
         var row = jdbc.queryForMap("SELECT ai_status, embedding_status FROM pages WHERE url = ?", url);
         assertThat(row).containsEntry("ai_status", "pending").containsEntry("embedding_status", "pending");
+    }
+
+    private java.util.Map<String, Object> aiStateOf(String url) {
+        return jdbc.queryForMap("SELECT ai_status, ai_attempts FROM pages WHERE url = ?", url);
+    }
+
+    @Test
+    void failedEnrichmentCountsAnAttemptAndSuccessDoesNot() {
+        String url = "http://attempts-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "some content"));
+
+        repository.updateAiFields(url, AiOutcome.partialFailure(Enrichment.EMPTY));
+        repository.updateAiFields(url, AiOutcome.partialFailure(Enrichment.EMPTY));
+        assertThat(aiStateOf(url)).containsEntry("ai_status", "failed_transient").containsEntry("ai_attempts", 2);
+
+        repository.updateAiFields(url, AiOutcome.processed(Enrichment.EMPTY));
+        assertThat(aiStateOf(url)).containsEntry("ai_status", "processed").containsEntry("ai_attempts", 2);
+    }
+
+    @Test
+    void permanentFailureWithNewContentGoesBackToPendingWithZeroAttempts() {
+        String url = "http://permanent-new-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "version one content"));
+        repository.updateAiFields(url, AiOutcome.permanentFailure(Enrichment.EMPTY));
+
+        repository.upsertWithVersioning(doc(url, "version two, different content"));
+
+        assertThat(aiStateOf(url)).containsEntry("ai_status", "pending").containsEntry("ai_attempts", 0);
+    }
+
+    @Test
+    void permanentFailureWithSameContentStaysPermanent() {
+        String url = "http://permanent-same-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "unchanged content"));
+        repository.updateAiFields(url, AiOutcome.permanentFailure(Enrichment.EMPTY));
+
+        repository.upsertWithVersioning(doc(url, "unchanged content"));
+
+        assertThat(aiStateOf(url)).containsEntry("ai_status", "failed_permanent").containsEntry("ai_attempts", 1);
     }
 
     @Test
@@ -188,15 +226,14 @@ class PageRepositoryTest {
         Enrichment enrichment = Enrichment.EMPTY
             .withLanguage(new LanguageTag("en", 0.97))
             .withSummary(new Summary("um resumo curto", 0.9))
-            .withCategory(new Classification("forum", 0.82))
-            .withTranslation(new Translation("o conteúdo da página", "en", 0.88));
+            .withCategory(new Classification("forum", 0.82));
 
         repository.updateAiFields(url, AiOutcome.processed(enrichment));
 
         var row = jdbc.queryForMap("""
             SELECT ai_status, ai_error_message,
                    summary->>'text' AS s, category->>'category' AS c,
-                   language->>'code' AS l, translated_text->>'text' AS t
+                   language->>'code' AS l
             FROM pages WHERE url = ?
             """, url);
         assertThat(row)
@@ -204,8 +241,7 @@ class PageRepositoryTest {
             .containsEntry("ai_error_message", null)
             .containsEntry("s", "um resumo curto")
             .containsEntry("c", "forum")
-            .containsEntry("l", "en")
-            .containsEntry("t", "o conteúdo da página");
+            .containsEntry("l", "en");
     }
 
     @Test
@@ -236,5 +272,58 @@ class PageRepositoryTest {
             .containsEntry("raw_html", null);
         assertThat(jdbc.queryForObject(
             "SELECT count(*) FROM quarantined_pages WHERE url = ?", Integer.class, url)).isEqualTo(1);
+    }
+
+    @Test
+    void archivedVersionKeepsTheEnrichmentThatBelongedToIt() {
+        String url = "http://snapshot-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "version one content"));
+        repository.updateAiFields(url, AiOutcome.processed(Enrichment.EMPTY
+            .withSummary(new Summary("resumo v1", 0.9))
+            .withCategory(new Classification("forum", 0.8))
+            .withEntities(java.util.List.of(com.onionmind.content.ExtractedEntity.of(
+                com.onionmind.content.EntityType.PERSON, "Ana", 0.9)))));
+
+        repository.upsertWithVersioning(doc(url, "version two content"));
+
+        var v1 = jdbc.queryForMap("""
+            SELECT extracted_text, summary->>'text' AS summary, category->>'category' AS category,
+                   entities->0->>'key' AS entity
+            FROM page_versions WHERE page_id = (SELECT id FROM pages WHERE url = ?) AND version = 1
+            """, url);
+        assertThat(v1).containsEntry("extracted_text", "version one content").containsEntry("summary", "resumo v1")
+            .containsEntry("category", "forum").containsEntry("entity", "ana");
+    }
+
+    @Test
+    void versionNeverEnrichedIsArchivedWithoutEnrichment() {
+        String url = "http://snapshot-pending-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "version one content"));
+        repository.updateAiFields(url, AiOutcome.processed(Enrichment.EMPTY.withSummary(new Summary("resumo v1", 0.9))));
+        repository.upsertWithVersioning(doc(url, "version two content")); // v2 pending, still has v1's summary
+
+        repository.upsertWithVersioning(doc(url, "version three content"));
+
+        var v2 = jdbc.queryForMap("""
+            SELECT extracted_text, summary FROM page_versions
+            WHERE page_id = (SELECT id FROM pages WHERE url = ?) AND version = 2
+            """, url);
+        assertThat(v2).containsEntry("extracted_text", "version two content").containsEntry("summary", null);
+    }
+
+    @Test
+    void quarantineAlsoStripsArchivedVersions() {
+        String url = "http://quarantine-history-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "version one content"));
+        repository.upsertWithVersioning(doc(url, "version two content"));
+        repository.upsertWithVersioning(doc(url, "version three content"));
+
+        repository.quarantine(doc(url, "version four, blocked"), "url-denylist");
+
+        assertThat(jdbc.queryForObject("""
+            SELECT count(*) FROM page_versions
+            WHERE page_id = (SELECT id FROM pages WHERE url = ?) AND extracted_text IS NOT NULL
+            """, Integer.class, url)).isZero();
+        assertThat(archivedCountFor(url)).isEqualTo(2);
     }
 }

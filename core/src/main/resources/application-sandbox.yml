@@ -29,3 +29,6 @@ embedding:
 
 ai:
   enabled: false
+
+graph:
+  enabled: false

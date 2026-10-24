@@ -360,11 +360,11 @@ Adicionar entendimento gerado por LLM sem acoplar o sistema a um provedor espec�
 
 - Implementação real do `AIOrchestrator` com três adapters: Ollama, Groq, Gemini Flash
 - AI Cost Optimizer (regras simples, não ML — seção 7.3)
-- Processors: `TranslationProcessor`, `SummarizerProcessor`, `ClassifierProcessor`
+- Processors: `SummarizerProcessor`, `ClassifierProcessor` (o `TranslationProcessor` saiu em `remove-page-translation`: sem tradução de página, toda saída de IA em inglês)
 - Confidence score em cada campo gerado (seção 7.4)
 - Filtro de conteúdo ilegal (hashing perceptual) **antes** de qualquer processamento por LLM
 
-**Gate de saída:** uma página nova é automaticamente resumida, classificada e traduzida em minutos, com o provedor de IA escolhido automaticamente e sem estourar nenhum limite gratuito.
+**Gate de saída:** uma página nova é automaticamente resumida e classificada, com descrição em inglês, em minutos, com o provedor de IA escolhido automaticamente e sem estourar nenhum limite gratuito.
 
 ---
 
@@ -494,7 +494,6 @@ public record ProcessingResult(
 | 1 | `HtmlSanitizerProcessor` | 0 |
 | 2 | `EmbeddingProcessor` | 100 |
 | 3 | `LanguageDetectorProcessor` | 10 |
-| 3 | `TranslationProcessor` | 20 |
 | 3 | `SummarizerProcessor` | 30 |
 | 3 | `ClassifierProcessor` | 40 |
 | 4 | `EntityProcessor` | 50 |
@@ -735,6 +734,8 @@ A visão de longo prazo — indexar RSS, GitHub, PDFs e outras fontes além de T
 
 O ajuste já feito (Fase 1): crawler nomeado como `TorConnector` implementando `SourceConnector`, campo `source_type` no evento. Nenhum trabalho antecipado além disso — backlog explícito, não compromisso de entrega.
 
+**Busca bilíngue (backlog, `remove-page-translation`):** o corpus não é traduzido; quem é traduzido é o **prompt de busca** do usuário. Uma consulta em português (por exemplo, "vazamento de dados bancários") também é traduzida para inglês com `AIOrchestrator.translate` (mantido no módulo `ai` para isso), e a busca roda nos dois idiomas, para achar páginas `.onion` em inglês sobre o assunto. Vale principalmente para o full-text, que usa o dicionário `simple` (ADR-005) e não casa termos entre idiomas. Na semântica é opcional, porque o embedding já aproxima idiomas em parte. Registro completo em `onionmind-master-sdd.md` (8.2).
+
 ---
 
 ## 13. Glossário
@@ -780,7 +781,7 @@ O ajuste já feito (Fase 1): crawler nomeado como `TorConnector` implementando `
 ### Fase 3
 - [ ] `AIOrchestrator` funcional com 3 adapters (Ollama, Groq, Gemini)
 - [ ] Cost Optimizer roteia automaticamente entre providers
-- [ ] Páginas auto-resumidas, classificadas e traduzidas com confidence
+- [ ] Páginas auto-resumidas e classificadas, com descrição em inglês e confidence
 - [ ] Filtro de conteúdo ilegal ativo antes de qualquer processamento LLM
 - [ ] Nenhum tier gratuito estourado sob uso normal
 

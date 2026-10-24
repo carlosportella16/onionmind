@@ -6,6 +6,7 @@ import com.onionmind.ai.TaskContext;
 import com.onionmind.content.AiEnrichmentGate;
 import com.onionmind.content.Document;
 import com.onionmind.content.Enrichment.LanguageTag;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -19,8 +20,9 @@ import java.util.Locale;
 @ConditionalOnProperty(prefix = "ai", name = "enabled", havingValue = "true")
 public class LanguageDetectorProcessor extends AbstractAiProcessor {
 
-    public LanguageDetectorProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate) {
-        super(orchestrator, gate);
+    public LanguageDetectorProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate,
+                                     @Value("${ai.max-input-chars:8000}") int maxInputChars) {
+        super(orchestrator, gate, maxInputChars);
     }
 
     @Override

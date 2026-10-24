@@ -2,7 +2,7 @@
 
 > AI-powered Knowledge Discovery Platform for the Tor Network.
 
-**Current Phase:** Phase 3 validated end-to-end (2026-09-06) — real generation pipeline (summarize / classify / translate) with a multi-provider `AIOrchestrator` (Ollama, Groq, Gemini), an AI Cost Optimizer, an illegal-content guard, and enrichment surfaced in search, all proven against live Groq + Gemini + Ollama (see `docs/onionmind-fase3-sdd.md` §11.4 / §12). Phase 2's exit gate has also been re-run against live Ollama + Qdrant and its `min-score` recalibrated from real corpus data (§P2-1/P2-2).
+**Current Phase:** Phase 3 validated end-to-end (2026-09-06) — real generation pipeline (summarize / classify / detect language) with a multi-provider `AIOrchestrator` (Ollama, Groq, Gemini), an AI Cost Optimizer, an illegal-content guard, and enrichment surfaced in search, all proven against live Groq + Gemini + Ollama (see `docs/onionmind-fase3-sdd.md` §11.4 / §12). Phase 2's exit gate has also been re-run against live Ollama + Qdrant and its `min-score` recalibrated from real corpus data (§P2-1/P2-2).
 
 **Tech Stack:** Go (crawler) • Java 25 (Spring Boot 4.1 + Spring Modulith) • PostgreSQL • Redpanda • React
 
@@ -17,7 +17,7 @@ OnionMind discovers, crawls, indexes, and analyzes `.onion` content, transformin
 Most Tor search engines are link lists without ranking or context. OnionMind changes that:
 - **Continuous Discovery:** Go crawler autonomously finds new pages via Tor
 - **Intelligent Indexing:** Full-text search (PostgreSQL), semantic search (Qdrant), knowledge graph (Neo4j)
-- **Free AI:** Summaries, classification, translation, entity extraction — locally via Ollama + free tiers (Groq, Gemini Flash)
+- **Free AI:** Summaries, classification, entity extraction — locally via Ollama + free tiers (Groq, Gemini Flash)
 - **Incremental Delivery:** Each phase ships a working product — no phase exists just for infrastructure
 
 ---
@@ -64,15 +64,15 @@ Most Tor search engines are link lists without ranking or context. OnionMind cha
 | **0** | Repository, CI, Docker Compose, initial schema | ✅ Complete | Infrastructure boots, tests pass |
 | **1** | Crawler + full-text search (real MVP) | ✅ Complete | Discover → crawl → index → search in minutes |
 | **2** | Semantic search (embeddings + Qdrant) | ✅ Complete — live gate re-run 2026-09-06 | Concept-based search works |
-| **3** | AI generation (summarize, classify, translate) | ✅ Complete — validated live 2026-09-06 | New page summarized in minutes, quota never exceeded |
-| **4** | Knowledge graph + versioning | ⏳ Planned | "What changed?" answers correctly |
+| **3** | AI generation (summarize, classify) | ✅ Complete — validated live 2026-09-06 | New page summarized in minutes, quota never exceeded |
+| **4** | Knowledge graph + versioning | 🚧 Implemented — live gate pending | "What changed?" answers correctly |
 | **5** | Full RAG + Agent Playground | ⏳ Planned | RAG pipeline functional, real-world tested |
 | **6** | External connectors (RSS, GitHub, PDF) | ⏳ Backlog | — |
 
 ### Phase 1 Details
 
 Ships a functional Tor search engine without AI:
-- **Crawler:** TorConnector discovers URLs via Tor, avoids traps, deduplicates with Redis. A page too large to publish is recorded (not just logged) at `skipped:oversized:<sha1(url)>` — `redis-cli --scan --pattern 'skipped:oversized:*'` lists them, each value is `url|size_bytes|timestamp`
+- **Crawler:** TorConnector discovers URLs via Tor, avoids traps, deduplicates with Redis. A page too large to publish is recorded (not just logged) at `skipped:oversized:<sha256(url)>` — `redis-cli --scan --pattern 'skipped:oversized:*'` lists them, each value is `url|size_bytes|timestamp`
 - **Sanitization:** HTML cleaned before any persistence (OWASP allowlist)
 - **Indexing:** PostgreSQL `tsvector` GENERATED column + GIN index, `ts_rank` for relevance
 - **REST API:** GET `/api/search?q=term` returns ranked pages
@@ -84,12 +84,22 @@ Adds LLM-generated understanding without coupling to one provider or a paid acco
 - **`AIOrchestrator`:** one interface (`summarize` / `classify` / `translate` / `detectLanguage` / `embed`); a decorator chain (metrics → cache → retry → validation) with a provider-escalation loop that switches provider on a low-confidence answer and returns the best result rather than throwing.
 - **Three adapters:** `OllamaProvider` (local, no rate limit), `GroqProvider` (fast, daily + per-minute cap), `GeminiProvider` (1M context, tighter cap). Missing API key → the provider reports zero quota and is skipped.
 - **AI Cost Optimizer:** short non-critical text starts local, long/critical starts on the cloud; Ollama is always the floor. `ProviderQuotaTracker` counts daily and per-minute usage in Redis.
-- **Enrichment processors** (`ContentProcessor`, order 10–40): language detection (local stopword heuristic, escalates to the LLM when ambiguous), Portuguese translation (kept as a separate field), 2–3 sentence summary, fixed-taxonomy classification. Each skips work when `content_hash` is unchanged.
+- **Enrichment processors** (`ContentProcessor`, order 10–40): language detection (local stopword heuristic, escalates to the LLM when ambiguous), 2–3 sentence summary of the original text, fixed-taxonomy classification. Each skips work when `content_hash` is unchanged. Pages are not translated (removed in `remove-page-translation`: no API read it, and it was the largest call); `translate` stays on `AIOrchestrator` for the bilingual-search backlog.
+- **English output:** every prompt is in English and every LLM-generated text — page summary, change summary — comes out in English, whatever the page language. Category and entity-type codes are fixed identifiers. Summaries written in Portuguese before this change stay until the page changes; to standardize the corpus, re-queue it in batches, e.g. `UPDATE pages SET ai_status = 'pending' WHERE id IN (SELECT id FROM pages WHERE ai_status = 'processed' AND language->>'code' = 'pt' ORDER BY id LIMIT 200);` — each page spends LLM quota again.
 - **Illegal-content guard** (order 5, before any model): URL/host denylist + audited text patterns; a match halts the pipeline, records an audit row and persists no content. Perceptual image hashing is a documented gap (no images are stored).
 - **Search:** `/api/search` results carry `summary` and `category` read straight from JSONB — no LLM on the query path.
 - **Backfill:** a scheduled job re-runs the enrichment processors for pages stuck at `pending` / `failed_transient`.
+- **Limits:** each LLM call gets at most `ai.max-input-chars` (default 8000) characters of page text (`entities.max-input-chars` for named entities), so 1–2 MB pages stop hitting provider length limits. The summary of a page past that cap covers only its beginning; `extracted_text`, full-text search and the entity patterns still see the whole page. A page whose enrichment fails `ai.backfill.max-attempts` times (default 5, counted in `pages.ai_attempts`) goes `failed_permanent` and leaves the backfill queue and `ingestion.ai.lag`. A re-crawl with new content resets it to `pending` with zero attempts; to re-queue by hand: `UPDATE pages SET ai_status = 'pending', ai_attempts = 0 WHERE ai_status = 'failed_permanent' AND ...;`.
 
 Enable it with `ai.enabled=true` and the two API keys (below). With it off, the app behaves exactly as Phase 2.
+
+### Phase 4 Details
+
+Relates entities across pages and answers "what changed" (`docs/onionmind-fase4-sdd.md`):
+- **Entities** (`EntityProcessor`, order 50): wallets (legacy/bech32 BTC checksum-validated, ETH, XMR), v3 `.onion` addresses (checksum-validated), e-mails and PGP fingerprints come from patterns — no LLM. People, organizations, places and technologies come from `AIOrchestrator.extractEntities`, through the same router, quota and validation as Phase 3. Stored in `pages.entities` with a normalized key and confidence.
+- **Events (ADR-009):** a complete AI enrichment publishes `PageEnrichedEvent`; quarantine publishes `PageQuarantinedEvent`. The `graph` and `intelligence` modules react through `@ApplicationModuleListener` — async, after commit, durable in the Event Publication Registry and redelivered by `EventResubmissionJob`.
+- **Knowledge graph** (Neo4j, `graph.enabled`): `(:Page)-[:MENTIONS]->(:Entity)` plus `(:Page)-[:HOSTED_ON]->(:OnionService)`. A projection of `pages.entities` — a new version replaces the page's mentions, quarantine removes the page. `GET /api/entities/{type}/{key}` returns the pages citing an entity and what co-occurs with it.
+- **What changed** (`intelligence`): each new enriched version is diffed against the last enriched one (sentence sets, digits masked, so counters and dates are not changes), with entity and category deltas. Real changes are summarized by a scheduled job; `GET /api/changes?since=&category=&limit=` serves them with no live LLM call. Quarantine also erases archived text and change history.
 
 ---
 
@@ -112,10 +122,12 @@ cd onionmind
 
 # Start infrastructure — postgres, redpanda, redpanda-console, redis, tor,
 # ollama (pulls nomic-embed-text for embeddings + llama3.1:8b for generation),
-# qdrant (Phase 2+)
+# qdrant (Phase 2+), neo4j (Phase 4). The tor image is built from tor/Dockerfile
+# (Alpine-packaged Tor); after pulling a change to it, run `docker compose build tor`.
 docker-compose up -d
 
-# Wait for services to report healthy — the two ollama-pull jobs run once and exit
+# Wait for services to report healthy — the two ollama-pull jobs run once and exit.
+# tor turns healthy only once its log reaches "Bootstrapped 100%"; start the crawler after that.
 docker compose ps
 
 # Build and test Java core
@@ -150,6 +162,26 @@ export GEMINI_API_KEY=...    # https://aistudio.google.com
 ./gradlew bootRun --args='--spring.profiles.active=sandbox \
   --embedding.enabled=true --ai.enabled=true'
 ```
+
+**Enabling the knowledge graph (Phase 4):** entity extraction and change detection
+come with `ai.enabled=true`; the Neo4j projection needs the `neo4j` compose service
+and `graph.enabled=true`:
+
+```bash
+docker compose up -d neo4j      # browser at http://localhost:7474, neo4j / onionmind_dev_only
+./gradlew bootRun --args='--spring.profiles.active=sandbox --ai.enabled=true --graph.enabled=true'
+
+curl 'http://localhost:8081/api/changes?category=forum'                        # last 24h by default
+curl 'http://localhost:8081/api/entities/crypto_wallet/1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa'
+```
+
+- **Rebuild the graph** from Postgres (also how pages enriched before Phase 4 get in):
+  start once with `--graph.rebuild=true` — it wipes Neo4j and reprojects every
+  `processed` page from `pages.entities`.
+- **Entities for pages enriched before Phase 4:** re-queue them for the AI backfill in
+  batches, e.g. `UPDATE pages SET ai_status = 'pending' WHERE id IN (SELECT id FROM pages
+  WHERE ai_status = 'processed' AND entities IS NULL ORDER BY id LIMIT 200);`. Each page
+  spends LLM quota again (all enrichment steps re-run), so do it deliberately.
 
 With no key set for a provider it simply reports zero quota and the router
 skips it, degrading to local Ollama. Limits in `application.yml` are the
@@ -213,11 +245,12 @@ make test-coverage
 
 ### Acceptance (Cucumber) and Smoke Tests
 
-**Acceptance suite** — `core/src/test/resources/features/fase{1,2,3}/*.feature`, Gherkin in Portuguese, one file per phase:
+**Acceptance suite** — `core/src/test/resources/features/fase{1,2,3,4}/*.feature`, Gherkin in Portuguese, one folder per phase:
 
 - Fase 1 covers ingestion, versioning, sanitization, stats and full-text search.
 - Fase 2 covers concept search, the `min-score` floor, one page not crowding out the others, and hybrid fusion.
-- Fase 3 covers enrichment, translation, the taxonomy, quarantine and quota fallback.
+- Fase 3 covers enrichment (English summary, no translation), the taxonomy, quarantine and quota fallback.
+- Fase 4 covers entities in the graph (shared across pages, bad checksums ignored), "what changed" by category, trivial changes hidden, and quarantine leaving both the graph and the history.
 
 It runs inside the normal `./gradlew test` through `AcceptanceSuite`, so it is part of CI and of the coverage gate.
 
@@ -225,7 +258,7 @@ What is real vs. fake:
 
 | Real (Testcontainers / in-process) | Fake |
 |---|---|
-| Postgres, Kafka (`raw-pages`), Redis (quota + cache), Qdrant, pipeline, `CostOptimizerRouter`, `ProviderQuotaTracker`, decorators, Ollama/Groq/Gemini HTTP adapters | The model endpoints only: three local HTTP stubs answer generation deterministically and return bag-of-concepts embeddings (`FakeAiProviders`) |
+| Postgres, Kafka (`raw-pages`), Redis (quota + cache), Qdrant, Neo4j, pipeline, event listeners, `CostOptimizerRouter`, `ProviderQuotaTracker`, decorators, Ollama/Groq/Gemini HTTP adapters | The model endpoints only: three local HTTP stubs answer generation deterministically and return bag-of-concepts embeddings (`FakeAiProviders`) |
 
 No API keys, Tor or local models are needed.
 
@@ -237,7 +270,7 @@ cd core
 **Smoke tests** — `features/smoke/smoke.feature`, tagged `@smoke`.
 
 - They send GET requests only against an already running instance and write nothing, so they are safe against shared environments.
-- They are excluded from `./gradlew test`. In CI, the `smoke` job (after `ci-java`) boots the core against real Postgres, Kafka and Redis and runs them with `SMOKE_TAGS='@smoke and not @semantic'` (there is no Ollama or Qdrant on the runner).
+- They are excluded from `./gradlew test`. In CI, the `smoke` job (after `ci-java`) boots the core against real Postgres, Kafka and Redis and runs them with `SMOKE_TAGS='@smoke and not @semantic and not @grafo'` (there is no Ollama, Qdrant or Neo4j on the runner).
 
 ```bash
 ./scripts/smoke.sh                                         # http://localhost:8081, every @smoke scenario
@@ -250,6 +283,8 @@ Tags:
 
 - `@semantic` — `/api/search/semantic` (503 when embeddings are off).
 - `@ia` — AI metrics in `/actuator/prometheus`.
+- `@mudancas` — `/api/changes` contract and parameter validation.
+- `@grafo` — `/api/entities` 404/400 contract (the endpoint only exists with `graph.enabled=true`).
 - `@somente-leitura` — checks that `/api/stats` is unchanged by the run. Exclude it if a crawler is ingesting into the same instance at the same time.
 
 ### Crawler Acceptance Tests (godog)
@@ -282,7 +317,8 @@ crawler image ──SOCKS5──▶ e2e-fakes (fake Tor + .onion sites)
       ▼ raw-pages
   Redpanda ──▶ core ──▶ Postgres (Fase 1)
                  ├────▶ Qdrant + fake Ollama embeddings (Fase 2)
-                 └────▶ fake Ollama generation, denylist quarantine (Fase 3)
+                 ├────▶ fake Ollama generation, denylist quarantine (Fase 3)
+                 └────▶ entities → Neo4j (Fase 4)
                  ▲
      @e2e + @smoke Cucumber scenarios (GET only)
 ```
@@ -295,7 +331,7 @@ The script runs these steps:
 
 1. Builds the core jar.
 2. Starts `e2e/docker-compose.e2e.yml`, which includes the **real crawler image** and `crawler/cmd/e2e-fakes` (Tor, the `.onion` sites and Ollama).
-3. Runs the `@e2e` scenarios. They check that the seed and the linked page are searchable, that semantic search finds a page by concept, that results carry a summary and category, and that the denylisted host is not indexed.
+3. Runs the `@e2e` scenarios. They check that the seed and the linked page are searchable, that semantic search finds a page by concept, that results carry a summary and category, that the denylisted host is not indexed, and that a crawled wallet shows up in `/api/entities` with its page.
 4. Checks that the crawler container exits with code 0 on `SIGTERM`.
 5. Runs every `@smoke` scenario, `@semantic` and `@ia` included.
 
@@ -488,6 +524,8 @@ cd ../crawler && go test -v ./...
 |----------|---------|
 | `docs/onionmind-master-sdd.md` | Consolidated architecture, all ADRs, design patterns, roadmap |
 | `docs/onionmind-fase1-sdd.md` | Phase 1 detailed specification (crawler, indexing, API) |
+| `docs/onionmind-fase3-sdd.md` | Phase 3 detailed specification (AI orchestration, cost optimizer, guard) |
+| `docs/onionmind-fase4-sdd.md` | Phase 4 detailed specification (entities, knowledge graph, change detection) |
 | `docs/onionmind-mvp-architecture.md` | Architecture diagrams and data flows |
 
 Each document is self-contained and links to others for cross-reference.

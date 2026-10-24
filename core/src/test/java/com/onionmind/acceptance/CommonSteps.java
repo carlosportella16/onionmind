@@ -10,6 +10,7 @@ import io.cucumber.java.Before;
 import io.cucumber.java.pt.Dado;
 import io.cucumber.java.pt.Então;
 import io.cucumber.java.pt.Quando;
+import org.neo4j.driver.Driver;
 import org.apache.kafka.clients.producer.KafkaProducer;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.clients.producer.ProducerRecord;
@@ -58,6 +59,8 @@ public class CommonSteps {
     private EmbeddingBackfillJob embeddingBackfill;
     @Autowired
     private AiEnrichmentBackfillJob aiBackfill;
+    @Autowired
+    private Driver neo4j;
     @Value("${local.server.port}")
     private int port;
     @Value("${qdrant.url}")
@@ -72,9 +75,14 @@ public class CommonSteps {
 
     @Before
     public void resetState() throws Exception {
+        jdbc.update("DELETE FROM event_publication");
+        jdbc.update("DELETE FROM page_changes");
         jdbc.update("DELETE FROM page_versions");
         jdbc.update("DELETE FROM quarantined_pages");
         jdbc.update("DELETE FROM pages");
+        try (var session = neo4j.session()) {
+            session.run("MATCH (n) DETACH DELETE n").consume();
+        }
         redis.getRequiredConnectionFactory().getConnection().serverCommands().flushDb();
         try (HttpClient client = HttpClient.newHttpClient()) {
             client.send(HttpRequest.newBuilder(URI.create(
@@ -130,6 +138,13 @@ public class CommonSteps {
         // Same jobs the scheduler runs in production (design D6), triggered instead of awaited.
         embeddingBackfill.run();
         aiBackfill.run();
+        awaitEventsDelivered();
+    }
+
+    /** Fase 4 listeners run async after commit; done when no publication is left incomplete. */
+    void awaitEventsDelivered() {
+        await().atMost(Duration.ofSeconds(30)).until(() ->
+            jdbc.queryForObject("SELECT count(*) FROM event_publication", Integer.class) == 0);
     }
 
     @Quando("eu busco por {string}")

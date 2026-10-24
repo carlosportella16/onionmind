@@ -4,7 +4,9 @@ import com.onionmind.ai.AIOrchestrator;
 import com.onionmind.ai.Classification;
 import com.onionmind.ai.TaskContext;
 import com.onionmind.content.AiEnrichmentGate;
+import com.onionmind.content.Categories;
 import com.onionmind.content.Document;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -21,21 +23,21 @@ import java.util.Set;
 @ConditionalOnProperty(prefix = "ai", name = "enabled", havingValue = "true")
 public class ClassifierProcessor extends AbstractAiProcessor {
 
-    static final Set<String> TAXONOMY =
-        Set.of("marketplace", "forum", "blog", "service", "institutional", "other");
+    static final Set<String> TAXONOMY = Categories.TAXONOMY;
 
-    public ClassifierProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate) {
-        super(orchestrator, gate);
+    public ClassifierProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate,
+                               @Value("${ai.max-input-chars:8000}") int maxInputChars) {
+        super(orchestrator, gate, maxInputChars);
     }
 
     private static final String ALLOWED =
-        "Categorias permitidas (responda com exatamente uma, em minúsculas): "
+        "Allowed categories (answer with exactly one, in lowercase): "
             + String.join(", ", new java.util.TreeSet<>(TAXONOMY)) + ".\n\n";
 
     @Override
     protected Document enrich(Document document, String text) {
         Classification result = orchestrator.classify(ALLOWED + text,
-            TaskContext.batch(TaskContext.TaskType.CLASSIFY, approxTokens(text), "pt", false));
+            TaskContext.batch(TaskContext.TaskType.CLASSIFY, approxTokens(text), "en", false));
 
         String raw = result.category() == null ? "" : result.category().trim().toLowerCase(Locale.ROOT);
         String category = TAXONOMY.contains(raw) ? raw : "other";

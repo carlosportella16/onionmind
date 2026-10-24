@@ -38,6 +38,7 @@ class IngestionAiLagMetricTest {
         insert("http://a.onion", "pending");
         insert("http://b.onion", "failed_transient");
         insert("http://c.onion", "processed");
+        insert("http://d.onion", "failed_permanent"); // out of attempts, the backfill won't retry it
 
         new IngestionAiLagMetric(registry, jdbc);
 

@@ -10,9 +10,8 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Stopword-frequency language guess. The only decision downstream actually needs is
- * "is this Portuguese?" (skip translation) plus a best-guess ISO code — a full 75-language
- * detector would be overkill here.
+ * Stopword-frequency language guess. Downstream only needs a best-guess ISO code for
+ * {@code pages.language} — a full 75-language detector would be overkill here.
  *
  * ponytail: stopword heuristic over pt/en/es/fr/de only; swap in Lingua or
  * tika-langdetect if real multi-language accuracy ever matters.

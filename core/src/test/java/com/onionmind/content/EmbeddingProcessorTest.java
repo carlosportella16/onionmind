@@ -155,6 +155,11 @@ class EmbeddingProcessorTest {
         }
 
         @Override
+        public com.onionmind.ai.EntityExtraction extractEntities(String text, TaskContext ctx) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public Embedding embed(String text, TaskContext ctx) {
             embedCalls++;
             if (embedCalls - 1 == failOnCall) {

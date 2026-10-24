@@ -148,6 +148,11 @@ class SemanticSearchServiceTest {
         }
 
         @Override
+        public com.onionmind.ai.EntityExtraction extractEntities(String text, TaskContext ctx) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
         public Embedding embed(String text, TaskContext ctx) {
             return new Embedding(new float[]{0.1f, 0.2f, 0.3f}, 1.0);
         }

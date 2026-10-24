@@ -29,7 +29,7 @@ class LanguageDetectorProcessorTest {
 
     @BeforeEach
     void setUp() {
-        processor = new LanguageDetectorProcessor(orchestrator, gate);
+        processor = new LanguageDetectorProcessor(orchestrator, gate, 8000);
     }
 
     private Document doc(String text) {

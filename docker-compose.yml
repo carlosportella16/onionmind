@@ -61,10 +61,14 @@ services:
       retries: 5
 
   tor:
-    image: dperson/torproxy:latest
+    build: ./tor
     ports: ["9050:9050"]
-    environment:
-      LOCATION: BR
+    # healthy = bootstrap finished, i.e. Tor can build circuits (fix-real-infra-findings D4)
+    healthcheck:
+      test: ["CMD", "grep", "-q", "Bootstrapped 100%", "/var/lib/tor/notices.log"]
+      interval: 5s
+      retries: 24
+      start_period: 60s
     restart: unless-stopped
 
   ollama:
@@ -110,7 +114,22 @@ services:
       interval: 5s
       retries: 5
 
+  # Phase 4: knowledge graph. Community locally (no node limit); AuraDB Free in prod.
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-onionmind_dev_only}
+    ports: ["7474:7474", "7687:7687"]
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p \"$${NEO4J_AUTH#neo4j/}\" 'RETURN 1' || exit 1"]
+      interval: 5s
+      retries: 20
+      start_period: 20s
+
 volumes:
   pg_data:
   ollama_data:
   qdrant_data:
+  neo4j_data:

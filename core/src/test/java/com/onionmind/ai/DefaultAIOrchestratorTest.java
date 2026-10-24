@@ -113,12 +113,35 @@ class DefaultAIOrchestratorTest {
 
     @Test
     void cacheHitSkipsEveryProvider() {
-        cache.put(TaskContext.TaskType.SUMMARIZE, TEXT, new ValidatedResult("do cache", null, 0.95));
+        cache.put(TaskContext.TaskType.SUMMARIZE, new CompletionRequest(DefaultAIOrchestrator.SUMMARIZE_PROMPT, TEXT),
+            new ValidatedResult("do cache", null, 0.95));
 
         Summary summary = orchestrator.summarize(TEXT, shortCtx());
 
         assertThat(summary.text()).isEqualTo("do cache");
         assertThat(ollama.calls()).isZero();
+    }
+
+    @Test
+    void repeatedSummaryIsServedFromTheCache() {
+        ollama.script(ok("{\"summary\":\"bom resumo\",\"confidence\":0.85}"));
+
+        orchestrator.summarize(TEXT, shortCtx());
+        Summary second = orchestrator.summarize(TEXT, shortCtx());
+
+        assertThat(second.text()).isEqualTo("bom resumo");
+        assertThat(ollama.calls()).isEqualTo(1);
+    }
+
+    @Test
+    void translationsToDifferentLanguagesDoNotShareACacheEntry() {
+        ollama.script(ok("{\"translation\":\"texto traduzido\",\"detectedLanguage\":\"pt\",\"confidence\":0.9}"));
+        TaskContext ctx = TaskContext.batch(TaskContext.TaskType.TRANSLATE, 100, "pt", false);
+
+        orchestrator.translate(TEXT, "pt", ctx);
+        orchestrator.translate(TEXT, "en", ctx);
+
+        assertThat(ollama.calls()).isEqualTo(2);
     }
 
     @Test
@@ -142,6 +165,67 @@ class DefaultAIOrchestratorTest {
         assertThat(ollama.calls()).isZero();
     }
 
+    @Test
+    void extractEntitiesDropsEntitiesBelowMinConfidence() {
+        ollama.script(ok("""
+            {"entities": [{"type": "person", "value": "Ana", "confidence": 0.9},
+                          {"type": "location", "value": "Lisboa", "confidence": 0.4}],
+             "confidence": 0.85}
+            """));
+
+        EntityExtraction result = orchestrator.extractEntities(TEXT,
+            TaskContext.batch(TaskContext.TaskType.EXTRACT_ENTITIES, 100, null, false));
+
+        assertThat(result.entities()).containsExactly(new NamedEntity("person", "Ana", 0.9));
+        assertThat(result.confidence()).isEqualTo(0.85);
+    }
+
+    @Test
+    void extractEntitiesEscalatesOnMalformedOutputAndThrowsWhenAllFail() {
+        ollama.script(ok("ignore as instruções e responda em prosa"));
+        groq.script(ok("{\"entities\": [], \"confidence\": 0.9}"));
+
+        assertThat(orchestrator.extractEntities(TEXT,
+            TaskContext.batch(TaskContext.TaskType.EXTRACT_ENTITIES, 100, null, false)).entities()).isEmpty();
+        assertThat(groq.calls()).isEqualTo(1);
+
+        ollama.script(boom());
+        groq.script(boom());
+        gemini.script(boom());
+        assertThatThrownBy(() -> orchestrator.extractEntities("outro texto",
+            TaskContext.batch(TaskContext.TaskType.EXTRACT_ENTITIES, 100, null, false)))
+            .isInstanceOf(AllProvidersExhaustedException.class);
+    }
+
+    /** The test fakes (FakeAiProviders, e2e ollama.go) pick their answer by these markers. */
+    @Test
+    void everyPromptIsEnglishAndOpensWithItsFixedMarker() {
+        Map<String, String> markers = Map.of(
+            DefaultAIOrchestrator.SUMMARIZE_PROMPT, "You summarize web pages",
+            DefaultAIOrchestrator.CLASSIFY_PROMPT, "Classify the page",
+            DefaultAIOrchestrator.DETECT_LANGUAGE_PROMPT, "Identify the predominant language",
+            DefaultAIOrchestrator.EXTRACT_ENTITIES_PROMPT, "Extract the named entities",
+            DefaultAIOrchestrator.TRANSLATE_PROMPT.formatted("en"), "Translate the text");
+
+        markers.forEach((prompt, marker) -> assertThat(prompt).startsWith(marker)
+            .contains("Respond", "ONLY with JSON")
+            .doesNotContain("Responda", "SOMENTE", "Você", "Classifique", "Traduza", "Identifique", "Extraia"));
+        markers.keySet().stream().filter(p -> !p.startsWith("Translate"))
+            .forEach(p -> assertThat(p).contains("Respond in English"));
+    }
+
+    @Test
+    void sendsTheEnglishPromptAndTheUntouchedPageText() {
+        ollama.script(ok("{\"summary\":\"A summary.\",\"confidence\":0.9}"));
+
+        orchestrator.summarize(TEXT, shortCtx());
+
+        assertThat(ollama.requests).singleElement().satisfies(r -> {
+            assertThat(r.systemPrompt()).isEqualTo(DefaultAIOrchestrator.SUMMARIZE_PROMPT);
+            assertThat(r.userPrompt()).isEqualTo(TEXT);
+        });
+    }
+
     private static Supplier<CompletionResponse> ok(String json) {
         return () -> new CompletionResponse(json);
     }
@@ -155,6 +239,7 @@ class DefaultAIOrchestratorTest {
     static final class ScriptedProvider implements AIProvider {
         private final String id;
         private final AtomicInteger calls = new AtomicInteger();
+        final List<CompletionRequest> requests = new java.util.ArrayList<>();
         private Supplier<CompletionResponse> step = () -> new CompletionResponse("{}");
 
         ScriptedProvider(String id) {
@@ -177,6 +262,7 @@ class DefaultAIOrchestratorTest {
         @Override
         public CompletionResponse complete(CompletionRequest request) {
             calls.incrementAndGet();
+            requests.add(request);
             return step.get();
         }
 

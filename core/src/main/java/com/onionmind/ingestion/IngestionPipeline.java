@@ -7,6 +7,7 @@ import com.onionmind.content.ProcessingResult;
 import com.onionmind.ingestion.internal.PageRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,13 +27,16 @@ public class IngestionPipeline {
     private static final Logger log = LoggerFactory.getLogger(IngestionPipeline.class);
     private final List<ContentProcessor> processors;
     private final PageRepository repository;
+    private final ApplicationEventPublisher events;
 
-    public IngestionPipeline(List<ContentProcessor> processors, PageRepository repository) {
+    public IngestionPipeline(List<ContentProcessor> processors, PageRepository repository,
+                             ApplicationEventPublisher events) {
         this.processors = processors.stream()
             .filter(p -> !(p instanceof AiEnrichingProcessor) && !(p instanceof EmbeddingProcessor))
             .sorted(Comparator.comparingInt(ContentProcessor::order))
             .toList();
         this.repository = repository;
+        this.events = events;
     }
 
     @Transactional
@@ -47,6 +51,7 @@ public class IngestionPipeline {
                 log.warn("Ingestion halted for {} by {}: {}",
                     doc.url(), processor.getClass().getSimpleName(), result.error());
                 repository.quarantine(doc, result.error());
+                events.publishEvent(new PageQuarantinedEvent(doc.url(), PageEnrichedEvent.hostOf(doc.url())));
                 return; // no further processing, no content persisted
             }
             if (result.status() == ProcessingResult.Status.FAILED) {

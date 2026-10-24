@@ -13,17 +13,21 @@ import org.slf4j.LoggerFactory;
  * Shared shape for the order 10-40 AI processors: HTML only, skip when there is no text,
  * honour the content_hash gate (don't spend quota on unchanged pages), and never let an
  * AI failure abort the pipeline — a failed step returns FAILED and the page is persisted
- * with whatever the earlier steps produced (fase3-sdd 7.6).
+ * with whatever the earlier steps produced (fase3-sdd 7.6). The text handed to {@link #enrich}
+ * is capped at {@code maxInputChars}, so a 2 MB page never reaches the LLM whole
+ * (fix-real-infra-findings D1); {@code document.extractedText()} still has all of it.
  */
 abstract class AbstractAiProcessor implements AiEnrichingProcessor {
 
     protected final Logger log = LoggerFactory.getLogger(getClass());
     protected final AIOrchestrator orchestrator;
     private final AiEnrichmentGate gate;
+    private final int maxInputChars;
 
-    protected AbstractAiProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate) {
+    protected AbstractAiProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate, int maxInputChars) {
         this.orchestrator = orchestrator;
         this.gate = gate;
+        this.maxInputChars = maxInputChars;
     }
 
     @Override
@@ -36,7 +40,10 @@ abstract class AbstractAiProcessor implements AiEnrichingProcessor {
             return ProcessingResult.unchanged(document);
         }
         try {
-            return ProcessingResult.success(enrich(document, text));
+            return ProcessingResult.success(enrich(document, cap(text)));
+        } catch (PartialFailure e) {
+            log.warn("{} partially failed for {}: {}", getClass().getSimpleName(), document.url(), e.getMessage());
+            return ProcessingResult.failed(e.partial, getClass().getSimpleName() + ": " + e.getMessage());
         } catch (RuntimeException e) {
             log.warn("{} failed for {}: {}", getClass().getSimpleName(), document.url(), e.getMessage());
             return ProcessingResult.failed(document, getClass().getSimpleName() + ": " + e.getMessage());
@@ -53,5 +60,22 @@ abstract class AbstractAiProcessor implements AiEnrichingProcessor {
         return text.length() / 4;
     }
 
+    private String cap(String text) {
+        return text.length() > maxInputChars ? text.substring(0, maxInputChars) : text;
+    }
+
     protected abstract Document enrich(Document document, String text);
+
+    /**
+     * Thrown by {@link #enrich} when part of the work succeeded: the step still FAILS (so the
+     * backfill retries it), but carries the partial document instead of dropping it.
+     */
+    protected static final class PartialFailure extends RuntimeException {
+        private final transient Document partial;
+
+        PartialFailure(Document partial, RuntimeException cause) {
+            super(cause.getMessage(), cause);
+            this.partial = partial;
+        }
+    }
 }

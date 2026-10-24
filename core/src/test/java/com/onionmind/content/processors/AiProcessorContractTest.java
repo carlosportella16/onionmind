@@ -1,12 +1,12 @@
 package com.onionmind.content.processors;
 
 import com.onionmind.ai.AIOrchestrator;
+import com.onionmind.ai.TaskContext;
 import com.onionmind.content.AiEnrichmentGate;
 import com.onionmind.content.ContentProcessor;
 import com.onionmind.content.Document;
 import com.onionmind.content.DocumentType;
 import com.onionmind.content.Enrichment;
-import com.onionmind.content.Enrichment.LanguageTag;
 import com.onionmind.content.ProcessingResult;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.TestInstance;
@@ -30,7 +30,11 @@ import static org.mockito.Mockito.when;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class AiProcessorContractTest {
 
+    private static final int CAP = 8000;
+
+    private Object[] lastCall;
     private final AIOrchestrator failing = mock(AIOrchestrator.class, invocation -> {
+        lastCall = invocation.getArguments();
         throw new RuntimeException("all providers down");
     });
     private final AiEnrichmentGate gate = mock(AiEnrichmentGate.class);
@@ -45,15 +49,26 @@ class AiProcessorContractTest {
             .withEnrichment(enrichment);
     }
 
+    private static final String AMBIGUOUS = "xyzzy plugh frobnicate wibble wobble flibbertigibbet quux "
+        + "grault garply waldo fred plugh xyzzy thud spam ham eggs";
+
     Stream<Arguments> aiProcessors() {
-        String ambiguous = "xyzzy plugh frobnicate wibble wobble flibbertigibbet quux "
-            + "grault garply waldo fred plugh xyzzy thud spam ham eggs";
+        return processorsFor(AMBIGUOUS, "some body text");
+    }
+
+    private Stream<Arguments> processorsFor(String ambiguous, String body) {
         return Stream.of(
-            arguments("language", new LanguageDetectorProcessor(failing, gate), doc(ambiguous, Enrichment.EMPTY)),
-            arguments("translation", new TranslationProcessor(failing, gate),
-                doc("english body text", Enrichment.EMPTY.withLanguage(new LanguageTag("en", 0.9)))),
-            arguments("summary", new SummarizerProcessor(failing, gate), doc("some body text", Enrichment.EMPTY)),
-            arguments("classifier", new ClassifierProcessor(failing, gate), doc("some body text", Enrichment.EMPTY)));
+            arguments("language", new LanguageDetectorProcessor(failing, gate, CAP), doc(ambiguous, Enrichment.EMPTY)),
+            arguments("summary", new SummarizerProcessor(failing, gate, CAP), doc(body, Enrichment.EMPTY)),
+            arguments("classifier", new ClassifierProcessor(failing, gate, CAP), doc(body, Enrichment.EMPTY)));
+    }
+
+    /** 20K chars: the first CAP are ambiguous filler (so the language step asks the LLM), then a marker. */
+    private static final String HUGE = (AMBIGUOUS + " ").repeat(CAP / AMBIGUOUS.length() + 1).substring(0, CAP)
+        + " TAIL-MARKER " + "y".repeat(20_000 - CAP - 13);
+
+    Stream<Arguments> hugeInputs() {
+        return processorsFor(HUGE, HUGE);
     }
 
     @ParameterizedTest(name = "{0}")
@@ -72,5 +87,21 @@ class AiProcessorContractTest {
         ProcessingResult result = processor.process(input);
 
         assertThat(result.status()).isEqualTo(ProcessingResult.Status.FAILED);
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("hugeInputs")
+    void llmSeesAtMostTheCapAndTokensAreEstimatedOnIt(String name, ContentProcessor processor, Document input) {
+        when(gate.alreadyEnriched(any())).thenReturn(false);
+        lastCall = null;
+
+        processor.process(input);
+
+        assertThat(HUGE).hasSize(20_000);
+        String sent = (String) lastCall[0];
+        TaskContext ctx = (TaskContext) lastCall[lastCall.length - 1];
+        // the classifier prepends its taxonomy prompt, so check the page part, not the whole string
+        assertThat(sent).endsWith(HUGE.substring(0, CAP)).doesNotContain("TAIL-MARKER");
+        assertThat(ctx.approxTokens()).isEqualTo(CAP / 4);
     }
 }

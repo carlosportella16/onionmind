@@ -125,7 +125,7 @@ Event Publication Registry (Postgres) ── grava "publicado, pendente"
 | **0** — Fundação | Repo, CI, docker-compose, schema inicial c/ versionamento e confidence, interfaces no-op | — | Infra sobe, testes de integração passam |
 | **1** — Crawler + Busca Textual (MVP real) | Go crawler (Tor, worker pool, circuit breaker, dedup), Redpanda, sanitização, Postgres full-text (`tsvector`/GIN), API REST, React SPA | Embeddings, Qdrant, Neo4j, qualquer LLM | Descobrir → indexar → buscar em minutos, repetível, sem intervenção manual |
 | **2** — Busca Semântica | `EmbeddingProcessor` (Ollama/Cloudflare), Qdrant, fusão simples full-text + vetorial | Geração de texto via LLM | Busca por conceito encontra o que full-text não encontrava |
-| **3** — IA Generativa + Cost Optimizer | `AIOrchestrator` real (Ollama/Groq/Gemini), Translation/Summarizer/Classifier processors, confidence score, filtro de conteúdo ilegal antes de qualquer LLM | — | Página nova resumida/classificada em minutos, sem estourar tier gratuito |
+| **3** — IA Generativa + Cost Optimizer | `AIOrchestrator` real (Ollama/Groq/Gemini), Summarizer/Classifier processors (saída de IA em inglês), confidence score, filtro de conteúdo ilegal antes de qualquer LLM | Tradução de página (removida em `remove-page-translation`) | Página nova resumida/classificada em minutos, com descrição em inglês, sem estourar tier gratuito |
 | **4** — Knowledge Graph + Versionamento | `EntityProcessor`, Neo4j, diff via `content_hash` + LLM, `PageIndexedEvent` in-process (ADR-009) coordenando `graph`/`intelligence` | — | "O que mudou desde ontem" responde correto e curto |
 | **5** — RAG Completo + Agent Playground | Query rewriting, hybrid retrieval (RRF k=60), re-rank, Agent Playground (privado por usuário) | Marketplace público de agentes | Pipeline RAG funcional, extração de módulos avaliada com dados reais |
 | **6 / backlog** — Conectores externos | RSS, GitHub, PDF, S3 — cada um só mais um publisher no mesmo tópico Redpanda | Tudo — é backlog, não fase comprometida | — |
@@ -150,7 +150,7 @@ public interface ContentProcessor {
 |------|-----------|-------|
 | 1 | `HtmlSanitizerProcessor` | 0 |
 | 2 | `EmbeddingProcessor` | 100 |
-| 3 | `LanguageDetectorProcessor`, `TranslationProcessor`, `SummarizerProcessor`, `ClassifierProcessor` | 10–40 |
+| 3 | `LanguageDetectorProcessor`, `SummarizerProcessor`, `ClassifierProcessor` | 10–40 |
 | 4 | `EntityProcessor` | 50 |
 
 ### 6.2 `AIOrchestrator` — interface + decorator chain + loop de escalonamento
@@ -376,6 +376,7 @@ ts_rank               EmbeddingProcessor → Qdrant        │
 - **Granularidade muda na Fase 2:** full-text opera no documento inteiro (match literal em qualquer parte já é útil); embeddings precisam de chunk, porque um documento longo gera um vetor "médio" que não representa nada bem. Qdrant guarda `page_id` + `chunk_index`; conteúdo real só vive no Postgres.
 - **Consistência eventual observável:** se o embedding falhar depois do full-text já ter commitado, a página fica buscável por palavra-chave mas ausente da busca semântica até reprocessar — query de páginas "sem embedding correspondente" alimenta um job de backfill.
 - **Quase-duplicatas (clones/phishing, comuns em Tor):** `content_hash` só pega idêntico byte a byte. SimHash (fingerprint 64-bit, distância de Hamming ≤ 3) fica registrado como lacuna conhecida pra um `NearDuplicateDetectorProcessor` futuro — não é trabalho de MVP.
+- **Busca bilíngue (backlog, `remove-page-translation`):** o corpus não é traduzido; quem é traduzido é o **prompt de busca** do usuário. Uma consulta em português (por exemplo, "vazamento de dados bancários") também é traduzida para inglês com `AIOrchestrator.translate` (mantido no módulo `ai` para isso), e a busca roda nos dois idiomas, para achar páginas `.onion` em inglês sobre o assunto. Vale principalmente para o full-text, que usa o dicionário `simple` (ADR-005) e não casa termos entre idiomas. Na semântica é opcional, porque o embedding já aproxima idiomas em parte.
 
 ---
 
@@ -469,7 +470,7 @@ Neo4j (Fase 4+): nós tipados (`:OnionService`, `:Person`, `:CryptoWallet`...), 
 | Fase | Uso | Provedor |
 |------|-----|----------|
 | 1–2 | Embeddings apenas | Ollama local (`nomic-embed-text`) ou Cloudflare Workers AI |
-| 3 | Resumo/classificação/tradução em batch | Ollama → Groq → Gemini Flash (escada não-interativa) |
+| 3 | Resumo/classificação em batch (saída em inglês) | Ollama → Groq → Gemini Flash (escada não-interativa) |
 | 5 | Chat interativo | Groq/Gemini Flash primeiro (escada interativa, seção 9); Ollama nunca é primeira opção aqui |
 
 ## 13. Hospedagem a custo zero

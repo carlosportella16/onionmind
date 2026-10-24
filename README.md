@@ -72,7 +72,7 @@ Most Tor search engines are link lists without ranking or context. OnionMind cha
 ### Phase 1 Details
 
 Ships a functional Tor search engine without AI:
-- **Crawler:** TorConnector discovers URLs via Tor, avoids traps, deduplicates with Redis. A page too large to publish is recorded (not just logged) at `skipped:oversized:<sha256(url)>` — `redis-cli --scan --pattern 'skipped:oversized:*'` lists them, each value is `url|size_bytes|timestamp`
+- **Crawler:** TorConnector discovers URLs via Tor (anchors and plain-text v3 `.onion` addresses, capped per page), never fetches hosts on its MD5 denylist (see [Crawler host denylist](#crawler-host-denylist)), avoids traps, deduplicates with Redis. A page too large to publish is recorded (not just logged) at `skipped:oversized:<sha256(url)>` — `redis-cli --scan --pattern 'skipped:oversized:*'` lists them, each value is `url|size_bytes|timestamp`
 - **Sanitization:** HTML cleaned before any persistence (OWASP allowlist)
 - **Indexing:** PostgreSQL `tsvector` GENERATED column + GIN index, `ts_rank` for relevance
 - **REST API:** GET `/api/search?q=term` returns ranked pages
@@ -206,6 +206,31 @@ npm run dev
 # UI available: http://localhost:5173
 ```
 
+#### Crawler host denylist
+
+The frontier follows `<a href>` links **and** v3 `.onion` addresses written as plain text (ahmia's `/onions/` listing has no anchors at all). Before a URL is queued, and again before it is fetched (seeds included), the crawler checks its host against a list of banned-host MD5 hashes and drops it on a match. This is the first line of defence; the core's illegal-content guard still filters after ingestion.
+
+Two settings in `crawler/config.yaml`, under `crawler`:
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `max_links_per_page` | `2000` | At most this many distinct `.onion` links are queued per page, so a listing with thousands of hosts cannot take over the queue. |
+| `host_denylist_path` | `denylist/banned-hosts.md5` | File of banned-host hashes, relative to the config file. **Required**: a missing file stops the crawler at boot. An empty file is allowed (the log says `hosts=0`). |
+
+The file has ahmia's `/banned/` format: one hex MD5 per line, each the hash of the bare domain `<56 base32>.onion`. No scheme, port, path or subdomain, and lowercase, as in ahmia-site's `BannedDomainListView`. The crawler normalizes every URL the same way before hashing, so case, `https://`, ports, paths and `www.` do not matter. Blank lines are skipped, and any other line that is not a 32-char hex hash is dropped and counted in the log (`invalid_lines`).
+
+The repo ships only an empty placeholder (`crawler/denylist/banned-hosts.md5`, baked into the image). As with the core's URL denylist, the populated list stays **out of the repo** (never write it into `crawler/denylist/`). Generate it at deploy, review it, and mount it over the placeholder:
+
+```bash
+# ahmia's /banned/ already serves the hashes; keep only well-formed lines.
+curl -s https://ahmia.fi/banned/ | grep -Eo '^[0-9a-f]{32}$' > /secure/banned-hosts.md5
+# To add a host of your own (Linux md5sum; on macOS use `md5 -q -s '<host>.onion'`):
+printf '%s' '<56 base32>.onion' | md5sum | cut -c1-32 >> /secure/banned-hosts.md5
+
+docker run --rm --network onionmind_default \
+  -v /secure/banned-hosts.md5:/denylist/banned-hosts.md5:ro onionmind-crawler
+```
+
 **Search directly against the API:** http://localhost:8081/api/search?q=bitcoin
 
 With `ai.enabled=true`, each result also carries the generated `summary` and
@@ -331,7 +356,7 @@ The script runs these steps:
 
 1. Builds the core jar.
 2. Starts `e2e/docker-compose.e2e.yml`, which includes the **real crawler image** and `crawler/cmd/e2e-fakes` (Tor, the `.onion` sites and Ollama).
-3. Runs the `@e2e` scenarios. They check that the seed and the linked page are searchable, that semantic search finds a page by concept, that results carry a summary and category, that the denylisted host is not indexed, and that a crawled wallet shows up in `/api/entities` with its page.
+3. Runs the `@e2e` scenarios. They check that the seed and the linked page are searchable, that a page reached only through a plain-text `.onion` address is indexed, that semantic search finds a page by concept, that results carry a summary and category, that the denylisted host is not indexed, and that a crawled wallet shows up in `/api/entities` with its page.
 4. Checks that the crawler container exits with code 0 on `SIGTERM`.
 5. Runs every `@smoke` scenario, `@semantic` and `@ia` included.
 
@@ -422,8 +447,9 @@ onionmind/
 │   ├── Dockerfile                   # distroless, non-root
 │   ├── config.yaml                  # workers, seeds, Tor/Redis/Redpanda addresses
 │   ├── go.mod, go.sum
+│   ├── denylist/banned-hosts.md5    # empty placeholder for the banned-host MD5 list
 │   ├── cmd/crawler/main.go
-│   └── internal/{config,connector,dedup,frontier,normalizer,publisher,worker}/
+│   └── internal/{config,connector,dedup,denylist,frontier,normalizer,publisher,worker}/
 ├── web/                               # React SPA — search bar + result list
 │   ├── Dockerfile
 │   └── src/{api,components}/

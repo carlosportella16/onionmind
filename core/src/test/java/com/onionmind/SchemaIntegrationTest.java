@@ -68,4 +68,13 @@ class SchemaIntegrationTest {
                 """);
         assertThat(column).containsEntry("is_nullable", "NO").containsEntry("column_default", "0");
     }
+
+    @Test
+    void v9DropsThePageTranslationColumn() {
+        Integer translationColumn = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.columns
+                WHERE table_name = 'pages' AND column_name = 'translated_text'
+                """, Integer.class);
+        assertThat(translationColumn).isZero();
+    }
 }

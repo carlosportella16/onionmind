@@ -48,6 +48,9 @@ ai:
   max-escalations: 2
   cache-ttl: 24h
   safety-margin-percent: 5
+  max-input-chars: 8000
+  backfill:
+    max-attempts: 5
   ollama:
     generate-model: ${OLLAMA_GENERATE_MODEL:llama3.1:8b}
     timeout: 120s

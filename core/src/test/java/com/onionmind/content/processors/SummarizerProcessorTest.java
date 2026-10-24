@@ -31,7 +31,7 @@ class SummarizerProcessorTest {
 
     @BeforeEach
     void setUp() {
-        processor = new SummarizerProcessor(orchestrator, gate);
+        processor = new SummarizerProcessor(orchestrator, gate, 8000);
     }
 
     private Document doc() {

@@ -28,7 +28,7 @@ class ClassifierProcessorTest {
 
     @BeforeEach
     void setUp() {
-        processor = new ClassifierProcessor(orchestrator, gate);
+        processor = new ClassifierProcessor(orchestrator, gate, 8000);
     }
 
     private Document doc() {

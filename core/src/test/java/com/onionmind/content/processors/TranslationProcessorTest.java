@@ -32,7 +32,7 @@ class TranslationProcessorTest {
 
     @BeforeEach
     void setUp() {
-        processor = new TranslationProcessor(orchestrator, gate);
+        processor = new TranslationProcessor(orchestrator, gate, 8000);
     }
 
     private Document docWithLanguage(String code) {

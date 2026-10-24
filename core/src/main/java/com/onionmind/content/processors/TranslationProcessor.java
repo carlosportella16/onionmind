@@ -6,6 +6,7 @@ import com.onionmind.ai.Translation;
 import com.onionmind.content.AiEnrichmentGate;
 import com.onionmind.content.Document;
 import com.onionmind.content.Enrichment.LanguageTag;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -20,8 +21,9 @@ public class TranslationProcessor extends AbstractAiProcessor {
 
     private static final String TARGET = "português";
 
-    public TranslationProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate) {
-        super(orchestrator, gate);
+    public TranslationProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate,
+                                @Value("${ai.max-input-chars:8000}") int maxInputChars) {
+        super(orchestrator, gate, maxInputChars);
     }
 
     @Override

@@ -6,6 +6,7 @@ import com.onionmind.ai.TaskContext;
 import com.onionmind.ai.Translation;
 import com.onionmind.content.AiEnrichmentGate;
 import com.onionmind.content.Document;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -17,8 +18,9 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(prefix = "ai", name = "enabled", havingValue = "true")
 public class SummarizerProcessor extends AbstractAiProcessor {
 
-    public SummarizerProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate) {
-        super(orchestrator, gate);
+    public SummarizerProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate,
+                               @Value("${ai.max-input-chars:8000}") int maxInputChars) {
+        super(orchestrator, gate, maxInputChars);
     }
 
     @Override

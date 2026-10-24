@@ -6,6 +6,7 @@ import com.onionmind.ai.TaskContext;
 import com.onionmind.content.AiEnrichmentGate;
 import com.onionmind.content.Categories;
 import com.onionmind.content.Document;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -24,8 +25,9 @@ public class ClassifierProcessor extends AbstractAiProcessor {
 
     static final Set<String> TAXONOMY = Categories.TAXONOMY;
 
-    public ClassifierProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate) {
-        super(orchestrator, gate);
+    public ClassifierProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate,
+                               @Value("${ai.max-input-chars:8000}") int maxInputChars) {
+        super(orchestrator, gate, maxInputChars);
     }
 
     private static final String ALLOWED =

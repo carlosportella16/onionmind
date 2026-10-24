@@ -25,24 +25,22 @@ import java.util.List;
 @ConditionalOnProperty(prefix = "ai", name = "enabled", havingValue = "true")
 public class EntityProcessor extends AbstractAiProcessor {
 
-    private final int maxInputChars;
     private final int maxPerPage;
 
     public EntityProcessor(AIOrchestrator orchestrator, AiEnrichmentGate gate,
                            @Value("${entities.max-input-chars:8000}") int maxInputChars,
                            @Value("${entities.max-per-page:200}") int maxPerPage) {
-        super(orchestrator, gate);
-        this.maxInputChars = maxInputChars;
+        super(orchestrator, gate, maxInputChars);
         this.maxPerPage = maxPerPage;
     }
 
     @Override
     protected Document enrich(Document document, String text) {
-        List<ExtractedEntity> found = new ArrayList<>(EntityPatterns.extract(text));
-        String input = text.length() > maxInputChars ? text.substring(0, maxInputChars) : text;
+        // patterns are free: run them over the whole page, not the capped LLM input
+        List<ExtractedEntity> found = new ArrayList<>(EntityPatterns.extract(document.extractedText()));
         try {
-            EntityExtraction named = orchestrator.extractEntities(input,
-                TaskContext.batch(TaskContext.TaskType.EXTRACT_ENTITIES, approxTokens(input), null, false));
+            EntityExtraction named = orchestrator.extractEntities(text,
+                TaskContext.batch(TaskContext.TaskType.EXTRACT_ENTITIES, approxTokens(text), null, false));
             for (NamedEntity n : named.entities()) {
                 EntityType.fromCode(n.type()).ifPresent(t -> found.add(ExtractedEntity.of(t, n.value(), n.confidence())));
             }

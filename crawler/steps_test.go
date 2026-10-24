@@ -4,9 +4,12 @@ package crawler_test
 
 import (
 	"context"
+	"crypto/md5"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -37,6 +40,7 @@ type message struct {
 // world is one scenario's state.
 type world struct {
 	cfg      *config.Config
+	banned   []string // hosts written to the crawler's denylist file when it starts
 	redis    *redis.Client
 	cancel   context.CancelFunc
 	done     chan error
@@ -53,18 +57,21 @@ func initializeScenario(sc *godog.ScenarioContext) {
 		env.sites.Reset()
 		env.socks.Reset()
 		w.messages = map[string]message{}
+		w.banned = nil
 		w.redis = redis.NewClient(&redis.Options{Addr: env.redisAddr})
 		if err := w.redis.FlushDB(ctx).Err(); err != nil {
 			return ctx, err
 		}
+		topic := "raw-pages-" + strconv.FormatInt(time.Now().UnixNano(), 36)
 		w.cfg = &config.Config{
 			Crawler: config.CrawlerConfig{
 				Workers: 2, FetchTimeout: config.Duration(5 * time.Second), MaxPageSizeMB: 10,
-				CircuitBreaker: config.CircuitBreakerConfig{ConsecutiveFailures: 3, Timeout: config.Duration(30 * time.Second)},
+				CircuitBreaker:   config.CircuitBreakerConfig{ConsecutiveFailures: 3, Timeout: config.Duration(30 * time.Second)},
+				HostDenylistPath: filepath.Join(env.tmpDir, topic+".md5"),
 			},
 			Tor:      config.TorConfig{SocksAddr: env.socks.Addr()},
 			Redis:    config.RedisConfig{Addr: env.redisAddr, DedupTTL: config.Duration(time.Hour)},
-			Redpanda: config.RedpandaConfig{Brokers: []string{env.broker}, Topic: "raw-pages-" + strconv.FormatInt(time.Now().UnixNano(), 36)},
+			Redpanda: config.RedpandaConfig{Brokers: []string{env.broker}, Topic: topic},
 			Frontier: config.FrontierConfig{MaxQueueSize: 1000},
 		}
 		return ctx, nil
@@ -134,6 +141,13 @@ func (w *world) redisDown() error {
 func (w *world) runCrawler(seed string, depth int) error {
 	w.cfg.Frontier.Seeds = []string{seed}
 	w.cfg.Frontier.MaxDepth = depth
+	var list strings.Builder
+	for _, host := range w.banned {
+		fmt.Fprintf(&list, "%x\n", md5.Sum([]byte(host)))
+	}
+	if err := os.WriteFile(w.cfg.Crawler.HostDenylistPath, []byte(list.String()), 0o600); err != nil {
+		return err
+	}
 	if err := w.consume(); err != nil {
 		return err
 	}

@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+
+	"github.com/carlosportella16/onionmind/crawler/internal/denylist"
 )
 
 // Frontier manages the queue of URLs to visit with depth control.
@@ -13,6 +15,7 @@ import (
 type Frontier struct {
 	queue    chan URLJob
 	maxDepth int
+	deny     *denylist.Denylist
 }
 
 type URLJob struct {
@@ -20,10 +23,13 @@ type URLJob struct {
 	Depth int
 }
 
-func New(seeds []string, maxQueueSize, maxDepth int) *Frontier {
+// New queues the seeds as given; banned seeds are dropped by the worker before fetch.
+// Discovered links to hosts on deny are never queued (nil deny bans nothing).
+func New(seeds []string, maxQueueSize, maxDepth int, deny *denylist.Denylist) *Frontier {
 	f := &Frontier{
 		queue:    make(chan URLJob, maxQueueSize),
 		maxDepth: maxDepth,
+		deny:     deny,
 	}
 	for _, s := range seeds {
 		f.queue <- URLJob{URL: s, Depth: 0}
@@ -40,7 +46,7 @@ func (f *Frontier) Enqueue(parentDepth int, rawHTML []byte, baseURL string) {
 	}
 	links := extractLinks(rawHTML, baseURL)
 	for _, link := range links {
-		if !isOnion(link) {
+		if !isOnion(link) || f.deny.Banned(link) {
 			continue
 		}
 		select {

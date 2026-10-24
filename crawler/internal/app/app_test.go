@@ -10,7 +10,8 @@ import (
 
 func TestRun_UnreachableBrokerReturnsErrorInsteadOfBlocking(t *testing.T) {
 	cfg := &config.Config{
-		Crawler:  config.CrawlerConfig{Workers: 1, FetchTimeout: config.Duration(time.Second), MaxPageSizeMB: 1},
+		Crawler: config.CrawlerConfig{Workers: 1, FetchTimeout: config.Duration(time.Second), MaxPageSizeMB: 1,
+			HostDenylistPath: "../../denylist/banned-hosts.md5"},
 		Tor:      config.TorConfig{SocksAddr: "127.0.0.1:1"},
 		Redis:    config.RedisConfig{Addr: "127.0.0.1:1", DedupTTL: config.Duration(time.Minute)},
 		Redpanda: config.RedpandaConfig{Brokers: []string{"127.0.0.1:1"}, Topic: "raw-pages"},

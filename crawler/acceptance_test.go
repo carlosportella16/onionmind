@@ -23,6 +23,7 @@ var env struct {
 	broker    string
 	sites     *testfakes.OnionSites
 	socks     *testfakes.SOCKS5Server
+	tmpDir    string // per-scenario host denylist files
 }
 
 // TestFeatures runs crawler/features/*.feature against the real crawler wiring (app.Run),
@@ -30,6 +31,7 @@ var env struct {
 // build tag so a plain `go test ./...` stays Docker-free.
 func TestFeatures(t *testing.T) {
 	ctx := context.Background()
+	env.tmpDir = t.TempDir()
 
 	redisC, err := tcredis.Run(ctx, "redis:7-alpine")
 	testcontainers.CleanupContainer(t, redisC)

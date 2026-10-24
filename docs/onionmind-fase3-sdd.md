@@ -1,7 +1,7 @@
 # OnionMind — Fase 3: IA Generativa + Cost Optimizer (SDD)
 
 **Pré-requisito:** Fase 2 concluída (embeddings via Ollama, Qdrant, fusão full-text + vetorial) — ver "Pendências da Fase 2" na seção 2, algumas precisam fechar antes do gate desta fase.
-**Objetivo:** adicionar entendimento gerado por LLM (resumo, classificação, tradução) sobre o pipeline de ingestão, sem acoplar o sistema a um provedor específico nem a uma conta paga.
+**Objetivo:** adicionar entendimento gerado por LLM (resumo, classificação) sobre o pipeline de ingestão, sem acoplar o sistema a um provedor específico nem a uma conta paga.
 **Semanas estimadas:** 9–13 (referência `onionmind-sdd.md` seção 5).
 **Status:** código completo e testado na branch `feat/phase-3-llm-integration` (OpenSpec change `phase3-ai-generation`). DoD detalhada na seção 12; gate real ainda pendente (seção 11.4). Prontidão para a Fase 4 na seção 13.
 
@@ -14,7 +14,9 @@ Documentos de referência (validados para esta fase):
 
 ## 1. O que essa fase entrega (e o que não entrega)
 
-**Entrega — OnionMind v0.3:** toda página nova indexada é automaticamente resumida, classificada por categoria e (quando não está em português) traduzida, com um valor de `confidence` gravado junto de cada campo. O provedor de IA é escolhido automaticamente por um roteador de custo; sob uso normal, nenhum tier gratuito estoura. A busca (Fase 1 + 2) passa a devolver cada resultado já com resumo e categoria — sem chamar LLM ao vivo (SDD seção 9: `/api/search` nunca chama LLM, os campos vêm prontos da ingestão).
+**Entrega — OnionMind v0.3:** toda página nova indexada é automaticamente resumida e classificada por categoria, com descrição (resumo) em inglês e um valor de `confidence` gravado junto de cada campo. O provedor de IA é escolhido automaticamente por um roteador de custo; sob uso normal, nenhum tier gratuito estoura. A busca (Fase 1 + 2) passa a devolver cada resultado já com resumo e categoria — sem chamar LLM ao vivo (SDD seção 9: `/api/search` nunca chama LLM, os campos vêm prontos da ingestão).
+
+> **Nota (`remove-page-translation`, 2026-10-23):** a tradução de página foi removida. O `TranslationProcessor` (order 20) saiu, a `V9` dropou `pages.translated_text`, e o resumo sai direto do texto original. O inglês virou o formato padrão: todo prompt é em inglês e todo texto gerado por LLM (resumo de página, resumo de mudança) sai em inglês. Motivo: nenhuma API lia a tradução, e ela era a chamada mais cara (maior fonte de 429 e de `HTTP 400 "reduce the length"` no Groq, `fase4-sdd.md` 9.1). `AIOrchestrator.translate` continua no módulo `ai`, para a busca bilíngue do backlog (`master-sdd.md`). As menções à tradução nas seções abaixo são o desenho original da fase.
 
 **Não entrega:**
 - Chat / RAG / streaming de resposta (Fase 5).
@@ -370,8 +372,8 @@ Todos implementam `ContentProcessor`, `supports(HTML)`, e em falha retornam `Pro
 | order | Processor | O que faz | Provider típico |
 |-------|-----------|-----------|-----------------|
 | 10 | `LanguageDetectorProcessor` | Detecta idioma do `extractedText`. Biblioteca local (Lingua / Apache Tika) primeiro; só escala pro LLM em texto curto/ambíguo. Grava `pages.language = {"code": "en", "confidence": 0.98}`. | nenhum (local) |
-| 20 | `TranslationProcessor` | Se `language.code != "pt"`, traduz pra PT. Guarda a tradução como campo separado (não sobrescreve `extracted_text` — o original continua sendo a fonte de verdade pra busca e re-embedding). | Groq → Gemini → Ollama |
-| 30 | `SummarizerProcessor` | Resumo de 2–3 frases. `pages.summary = {"text": "...", "confidence": 0.91}`. Usa o texto traduzido se houver, senão o original. | Ollama (curto) → Groq → Gemini |
+| 20 | ~~`TranslationProcessor`~~ (removido em `remove-page-translation`) | Se `language.code != "pt"`, traduz pra PT. Guarda a tradução como campo separado (não sobrescreve `extracted_text` — o original continua sendo a fonte de verdade pra busca e re-embedding). | Groq → Gemini → Ollama |
+| 30 | `SummarizerProcessor` | Resumo de 2–3 frases, em inglês, do texto original. `pages.summary = {"text": "...", "confidence": 0.91}`. | Ollama (curto) → Groq → Gemini |
 | 40 | `ClassifierProcessor` | Classifica numa taxonomia fixa e pequena (ex.: marketplace, fórum, blog, serviço, institucional, outro). Prompt pede JSON `{"category": "...", "confidence": 0.x}`. `critical = false`. | Ollama → Groq → Gemini |
 
 `TaskContext` montado por cada processor: `approxTokens = text.length() / 4`, `sourceLanguage` da detecção, `critical = false` (nenhuma dessas tarefas é crítica na Fase 3 — o guard já rodou), `attemptNumber = 0`.
@@ -417,7 +419,7 @@ public void updateAiFields(String url, AiOutcome outcome) {
 | D3 | Escopo do filtro de conteúdo ilegal | Denylist de URL + padrões de texto auditados; hashing perceptual de imagem = lacuna conhecida documentada | Bases perceptuais não são gratuitas e o pipeline não guarda imagem. O gate de segurança do SDD ("antes de qualquer LLM, sem atalho de MVP") é atendido para o conteúdo que **existe** no pipeline (texto). |
 | D4 | ADR-003 — Avro + Schema Registry "quando a Fase 3 chegar" | **Adiar explicitamente.** Continuar com eventos JSON. | A Fase 3 não adiciona nenhum produtor novo no tópico `raw-pages` (só consumidores in-JVM). Schema Registry resolve evolução entre múltiplos produtores independentes — problema que só aparece na Fase 6 (conectores externos). Registrar a decisão para não reabrir. |
 | D5 | `embed()` na Fase 3 | Continua single-provider (Ollama), sem escada, sem `ValidationDecorator` | Só há um provedor de embeddings na Fase 3. Meter embeddings no loop de escalonamento adiciona complexidade sem ganho. Comportamento idêntico ao da Fase 2. |
-| D6 | Idioma-alvo da tradução | PT fixo nesta fase | O produto é para pesquisadores lusófonos (personas, `sdd.md` seção 2). Alvo configurável é trabalho de Fase 5+ (multi-tenant / preferência de usuário). |
+| D6 | Idioma-alvo da tradução | PT fixo nesta fase. **Substituída** por `remove-page-translation`: sem tradução de página, saída de IA em inglês | O produto é para pesquisadores lusófonos (personas, `sdd.md` seção 2). Alvo configurável é trabalho de Fase 5+ (multi-tenant / preferência de usuário). |
 | D7 | Cache de IA | Redis, TTL 24h, chave por `(hash do texto, tipo de tarefa)` — não por provider | Reprocessar a mesma página (re-crawl com hash igual já é barrado antes; isto cobre restart de job / backfill sobreposto). Não incluir o provider na chave: a resposta de qualquer provedor válido serve. |
 
 ---
@@ -467,7 +469,7 @@ Métricas mínimas desta fase:
 
 ### 11.3 Gate de saída — `Fase3AiGenerationGateTest`
 
-Espelha o teste de gate da Fase 1/2. Com `AIProvider` fake para o determinismo do CI, mas assertando o **comportamento do gate**: uma página nova entra no pipeline e sai resumida + classificada + (se não-PT) traduzida, com `confidence` gravado, e o roteador escolheu provider sem intervenção.
+Espelha o teste de gate da Fase 1/2. Com `AIProvider` fake para o determinismo do CI, mas assertando o **comportamento do gate**: uma página nova entra no pipeline e sai resumida e classificada, com descrição em inglês e `confidence` gravado, sem nenhuma chamada de tradução, e o roteador escolheu provider sem intervenção.
 
 ### 11.4 Validação manual (é o critério de aceite real da fase)
 
@@ -506,8 +508,8 @@ Estado da implementação `phase3-ai-generation` (branch `feat/phase-3-llm-integ
 - [x] `IllegalContentGuard` (order 5) barra por denylist de URL e padrões de texto; `HALT` interrompe o pipeline
 - [x] Página em quarentena não persiste `extracted_text`/`raw_html`; registra em `quarantined_pages`
 - [x] `LanguageDetectorProcessor` (10) grava `pages.language` — heurística local + escalonamento pro LLM
-- [x] `TranslationProcessor` (20) traduz não-PT → PT em `pages.translated_text` (V5), sem sobrescrever `extracted_text`
-- [x] `SummarizerProcessor` (30) grava `pages.summary` com confidence
+- [x] ~~`TranslationProcessor` (20) traduz não-PT → PT em `pages.translated_text` (V5)~~ — removido em `remove-page-translation` (coluna dropada na V9)
+- [x] `SummarizerProcessor` (30) grava `pages.summary` com confidence, em inglês, a partir do texto original
 - [x] `ClassifierProcessor` (40) grava `pages.category` numa taxonomia fixa; fora da taxonomia → `FAILED` (re-enfileira no backfill)
 - [x] Cada processor respeita o gate de `content_hash` via `AiEnrichmentGate` (não gasta cota em conteúdo inalterado)
 
@@ -566,7 +568,7 @@ Junto nessa rodada, achado e fechado outro bug adjacente: `pages.search_vector` 
 **Timing real desta rodada não ficou limpo**: uma página levou 26min16s de `first_seen_at` a `ai_processed_at` — mas dominado por instabilidade real dos provedores no momento do teste (Ollama falhando repetidamente, Gemini devolvendo HTTP 503 "high demand"), não pelo bug do scheduler (esse já provado corrigido pela execução concorrente). Não é o número pra usar como referência do gate — só confirma que nada mais trava, mesmo sob falha externa real.
 
 ### Gate final
-Uma página nova é automaticamente resumida, classificada e (se necessário) traduzida dentro de alguns minutos após ser indexada, com o provedor de IA escolhido automaticamente e sem estourar nenhum limite gratuito sob uso normal.
+Uma página nova é automaticamente resumida e classificada, com descrição em inglês, dentro de alguns minutos após ser indexada, com o provedor de IA escolhido automaticamente e sem estourar nenhum limite gratuito sob uso normal.
 
 **Status:** 🟢 validado contra Groq + Gemini + Ollama reais em 2026-09-06 (ver seção acima), e P2-1/P2-2 fechados no mesmo dia com Qdrant + Ollama reais (ver nota própria). Cinco bugs de correção achados e corrigidos nessas rodadas — todos invisíveis pros testes com fake/mock: margem de cota (Groq/Gemini nunca eram escolhidos), modelo Groq descontinuado, uma página degenerada saturando o candidate pool da busca semântica, consumer Kafka travando sob IA lenta (`fix-ingestion-stability`), e o scheduler de backfill + limite de tsvector do Postgres (`fix-large-page-backfill-limits`, nota acima). DoD da Fase 3 fechado; limitação de corpus (filtro de qualidade de conteúdo pré-embedding) registrada como item futuro, não bloqueante.
 

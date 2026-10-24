@@ -2,7 +2,7 @@
 
 > AI-powered Knowledge Discovery Platform for the Tor Network.
 
-**Current Phase:** Phase 3 validated end-to-end (2026-09-06) — real generation pipeline (summarize / classify / translate) with a multi-provider `AIOrchestrator` (Ollama, Groq, Gemini), an AI Cost Optimizer, an illegal-content guard, and enrichment surfaced in search, all proven against live Groq + Gemini + Ollama (see `docs/onionmind-fase3-sdd.md` §11.4 / §12). Phase 2's exit gate has also been re-run against live Ollama + Qdrant and its `min-score` recalibrated from real corpus data (§P2-1/P2-2).
+**Current Phase:** Phase 3 validated end-to-end (2026-09-06) — real generation pipeline (summarize / classify / detect language) with a multi-provider `AIOrchestrator` (Ollama, Groq, Gemini), an AI Cost Optimizer, an illegal-content guard, and enrichment surfaced in search, all proven against live Groq + Gemini + Ollama (see `docs/onionmind-fase3-sdd.md` §11.4 / §12). Phase 2's exit gate has also been re-run against live Ollama + Qdrant and its `min-score` recalibrated from real corpus data (§P2-1/P2-2).
 
 **Tech Stack:** Go (crawler) • Java 25 (Spring Boot 4.1 + Spring Modulith) • PostgreSQL • Redpanda • React
 
@@ -17,7 +17,7 @@ OnionMind discovers, crawls, indexes, and analyzes `.onion` content, transformin
 Most Tor search engines are link lists without ranking or context. OnionMind changes that:
 - **Continuous Discovery:** Go crawler autonomously finds new pages via Tor
 - **Intelligent Indexing:** Full-text search (PostgreSQL), semantic search (Qdrant), knowledge graph (Neo4j)
-- **Free AI:** Summaries, classification, translation, entity extraction — locally via Ollama + free tiers (Groq, Gemini Flash)
+- **Free AI:** Summaries, classification, entity extraction — locally via Ollama + free tiers (Groq, Gemini Flash)
 - **Incremental Delivery:** Each phase ships a working product — no phase exists just for infrastructure
 
 ---
@@ -64,7 +64,7 @@ Most Tor search engines are link lists without ranking or context. OnionMind cha
 | **0** | Repository, CI, Docker Compose, initial schema | ✅ Complete | Infrastructure boots, tests pass |
 | **1** | Crawler + full-text search (real MVP) | ✅ Complete | Discover → crawl → index → search in minutes |
 | **2** | Semantic search (embeddings + Qdrant) | ✅ Complete — live gate re-run 2026-09-06 | Concept-based search works |
-| **3** | AI generation (summarize, classify, translate) | ✅ Complete — validated live 2026-09-06 | New page summarized in minutes, quota never exceeded |
+| **3** | AI generation (summarize, classify) | ✅ Complete — validated live 2026-09-06 | New page summarized in minutes, quota never exceeded |
 | **4** | Knowledge graph + versioning | 🚧 Implemented — live gate pending | "What changed?" answers correctly |
 | **5** | Full RAG + Agent Playground | ⏳ Planned | RAG pipeline functional, real-world tested |
 | **6** | External connectors (RSS, GitHub, PDF) | ⏳ Backlog | — |
@@ -84,7 +84,8 @@ Adds LLM-generated understanding without coupling to one provider or a paid acco
 - **`AIOrchestrator`:** one interface (`summarize` / `classify` / `translate` / `detectLanguage` / `embed`); a decorator chain (metrics → cache → retry → validation) with a provider-escalation loop that switches provider on a low-confidence answer and returns the best result rather than throwing.
 - **Three adapters:** `OllamaProvider` (local, no rate limit), `GroqProvider` (fast, daily + per-minute cap), `GeminiProvider` (1M context, tighter cap). Missing API key → the provider reports zero quota and is skipped.
 - **AI Cost Optimizer:** short non-critical text starts local, long/critical starts on the cloud; Ollama is always the floor. `ProviderQuotaTracker` counts daily and per-minute usage in Redis.
-- **Enrichment processors** (`ContentProcessor`, order 10–40): language detection (local stopword heuristic, escalates to the LLM when ambiguous), Portuguese translation (kept as a separate field), 2–3 sentence summary, fixed-taxonomy classification. Each skips work when `content_hash` is unchanged.
+- **Enrichment processors** (`ContentProcessor`, order 10–40): language detection (local stopword heuristic, escalates to the LLM when ambiguous), 2–3 sentence summary of the original text, fixed-taxonomy classification. Each skips work when `content_hash` is unchanged. Pages are not translated (removed in `remove-page-translation`: no API read it, and it was the largest call); `translate` stays on `AIOrchestrator` for the bilingual-search backlog.
+- **English output:** every prompt is in English and every LLM-generated text — page summary, change summary — comes out in English, whatever the page language. Category and entity-type codes are fixed identifiers. Summaries written in Portuguese before this change stay until the page changes; to standardize the corpus, re-queue it in batches, e.g. `UPDATE pages SET ai_status = 'pending' WHERE id IN (SELECT id FROM pages WHERE ai_status = 'processed' AND language->>'code' = 'pt' ORDER BY id LIMIT 200);` — each page spends LLM quota again.
 - **Illegal-content guard** (order 5, before any model): URL/host denylist + audited text patterns; a match halts the pipeline, records an audit row and persists no content. Perceptual image hashing is a documented gap (no images are stored).
 - **Search:** `/api/search` results carry `summary` and `category` read straight from JSONB — no LLM on the query path.
 - **Backfill:** a scheduled job re-runs the enrichment processors for pages stuck at `pending` / `failed_transient`.
@@ -248,7 +249,7 @@ make test-coverage
 
 - Fase 1 covers ingestion, versioning, sanitization, stats and full-text search.
 - Fase 2 covers concept search, the `min-score` floor, one page not crowding out the others, and hybrid fusion.
-- Fase 3 covers enrichment, translation, the taxonomy, quarantine and quota fallback.
+- Fase 3 covers enrichment (English summary, no translation), the taxonomy, quarantine and quota fallback.
 - Fase 4 covers entities in the graph (shared across pages, bad checksums ignored), "what changed" by category, trivial changes hidden, and quarantine leaving both the graph and the history.
 
 It runs inside the normal `./gradlew test` through `AcceptanceSuite`, so it is part of CI and of the coverage gate.

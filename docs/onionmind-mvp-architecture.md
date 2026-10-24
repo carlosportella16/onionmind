@@ -63,7 +63,7 @@ Adicionar entendimento gerado por LLM sem acoplar o sistema a um provedor espec�
 
 Escopo: implementação real do `AIOrchestrator` (seção 4.2) com três adapters — Ollama local (grátis, sem rate limit, mas lento e limitado pelo hardware), Groq (grátis, latência baixíssima, mas com teto diário de requisições) e Gemini Flash (grátis, contexto de 1M tokens, mas limite de requisições por dia mais apertado). Implementação dos processors que dependem de IA: `TranslationProcessor`, `SummarizerProcessor`, `ClassifierProcessor`. Introdução do **AI Cost Optimizer** (seção 4.3) — nesta fase, um conjunto de regras simples, não um sistema de ML. Cada saída de IA grava um `confidence` no banco.
 
-**Gate de saída:** uma página nova é automaticamente resumida, classificada e (se necessário) traduzida dentro de alguns minutos após ser indexada, com o provedor de IA escolhido automaticamente e sem estourar nenhum limite gratuito sob uso normal.
+**Gate de saída:** uma página nova é automaticamente resumida e classificada, com descrição em inglês (a tradução de página saiu em `remove-page-translation`), dentro de alguns minutos após ser indexada, com o provedor de IA escolhido automaticamente e sem estourar nenhum limite gratuito sob uso normal.
 
 ### Fase 4 — Knowledge Graph + Versionamento (semanas 13–17)
 

@@ -21,7 +21,7 @@ Documentos de referência:
   - pessoas, organizações, locais e tecnologias, via LLM.
 - **Grafo Neo4j** que liga páginas, serviços e entidades.
 - **Consulta de entidade**, que mostra quem cita e o que aparece junto.
-- **Detecção de mudanças entre versões**, com resumo curto em português.
+- **Detecção de mudanças entre versões**, com resumo curto em inglês (o formato padrão de todo texto gerado por IA desde `remove-page-translation`).
 - **Consulta "o que mudou"** por categoria e período, sem LLM ao vivo.
 
 **Não entrega:**
@@ -39,7 +39,7 @@ Documentos de referência:
  crawler ──raw-pages──▶ IngestionPipeline ──▶ pages (pending)
                                                   │  AiEnrichmentBackfillJob (agendado, LLM fora de transação)
                                                   ▼
-                       order 10–50: idioma, tradução, resumo, categoria, ENTIDADES
+                       order 10–50: idioma, resumo, categoria, ENTIDADES
                                                   │  tx curta: updateAiFields + publishEvent
                                                   ▼
                                    PageEnrichedEvent (Event Publication Registry)

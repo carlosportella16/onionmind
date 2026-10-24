@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FakeAiProvidersTest {
 
     private static final double MIN_SCORE = 0.45;
-    private static final String GENERATE = "/models/gemini-2.5-flash-lite:generateContent";
+    private static final String GENERATE = "/models/gemini-3.5-flash-lite:generateContent";
 
     @Test
     void paraphraseOfSameConceptScoresAboveMinScore() {

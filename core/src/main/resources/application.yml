@@ -149,7 +149,9 @@ ai:
     gemini: { requests-per-minute: 1000, requests-per-day: 10000, tokens-per-minute: 1000000, tokens-per-day: 20000000 }
   gemini:
     base-url: https://generativelanguage.googleapis.com/v1beta
-    model: gemini-2.5-flash-lite   # US$ 0.10 / 0.40 per 1M tokens, thinking off (D2)
+    # gemini-2.5-flash-lite is closed to new users (HTTP 404, 2026-10-24); 3.5 Flash-Lite is what
+    # the API points to. US$ 0.30 / 2.50 per 1M tokens, thinking at its minimal level.
+    model: gemini-3.5-flash-lite
     api-key: ${GEMINI_API_KEY:}    # key of a project WITH billing — never a free-tier key
   # OpenAI-compatible providers, one bean per id (D1). extra-body goes into every request.
   openai-compatible:

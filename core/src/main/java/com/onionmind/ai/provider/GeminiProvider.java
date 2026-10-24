@@ -14,9 +14,10 @@ import java.util.Map;
 /**
  * Gemini via {@code /models/{model}:generateContent} — paid tier only: the free tier uses
  * the content to improve products, which is not approved for .onion text. The system prompt
- * goes in {@code systemInstruction}, the output is JSON, and thinking is off so no call pays
- * for reasoning tokens (replace-ollama-with-gemini-deepseek D2; budget 0 is valid on 2.5
- * Flash-Lite, a Gemini 3 model would need {@code thinkingLevel} instead).
+ * goes in {@code systemInstruction}, the output is JSON, and thinking stays at its lowest level
+ * so calls don't pay for reasoning tokens. Gemini 3 has no "off": {@code thinkingLevel: minimal}
+ * is the floor, and {@code thinkingBudget: 0} is rejected with HTTP 400 (checked live on
+ * gemini-3.5-flash-lite, 2026-10-24 — gemini-2.5-flash-lite is no longer open to new users).
  */
 @Component
 @ConditionalOnProperty(prefix = "ai", name = "enabled", havingValue = "true")
@@ -24,7 +25,7 @@ public class GeminiProvider extends HttpAIProvider {
 
     private static final Map<String, Object> GENERATION_CONFIG = Map.of(
         "responseMimeType", "application/json",
-        "thinkingConfig", Map.of("thinkingBudget", 0));
+        "thinkingConfig", Map.of("thinkingLevel", "minimal"));
 
     private final String baseUrl;
     private final String model;

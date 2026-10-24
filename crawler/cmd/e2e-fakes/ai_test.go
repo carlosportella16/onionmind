@@ -89,7 +89,7 @@ func TestGenerationEndpointsAnswerEachTaskInJSON(t *testing.T) {
 		var gen struct {
 			Candidates []struct{ Content geminiContent }
 		}
-		post(t, srv.URL+"/v1beta/models/gemini-2.5-flash-lite:generateContent",
+		post(t, srv.URL+"/v1beta/models/gemini-3.5-flash-lite:generateContent",
 			`{"systemInstruction":{"parts":[{"text":"`+system+`"}]},"contents":[{"role":"user","parts":[{"text":"texto"}]}]}`, &gen)
 		var chat struct {
 			Choices []struct{ Message struct{ Content string } }

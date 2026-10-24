@@ -30,7 +30,7 @@ class GeminiProviderTest {
         server = new FakeHttpServer();
         tracker = new ProviderQuotaTracker(redis, Clock.systemUTC(),
             Map.of("gemini", new ProviderLimits(10000, 1000, 0, 0)));
-        provider = new GeminiProvider(server.baseUrl(), "gemini-2.5-flash-lite", "test-key", tracker);
+        provider = new GeminiProvider(server.baseUrl(), "gemini-3.5-flash-lite", "test-key", tracker);
     }
 
     @AfterEach
@@ -39,18 +39,19 @@ class GeminiProviderTest {
     }
 
     @Test
-    void sendsSystemInstructionJsonOutputAndThinkingOff() throws Exception {
+    void sendsSystemInstructionJsonOutputAndMinimalThinking() throws Exception {
         server.responseBody = "{\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"{}\"}]}}]}";
 
         CompletionResponse response = provider.complete(new CompletionRequest("sys", "page text"));
 
-        assertThat(server.requestPaths).containsExactly("/models/gemini-2.5-flash-lite:generateContent");
+        assertThat(server.requestPaths).containsExactly("/models/gemini-3.5-flash-lite:generateContent");
         assertThat(server.authHeaders.get(0)).isEqualTo("test-key");
         JsonNode body = JsonMapper.builder().build().readTree(server.requestBodies.get(0));
         assertThat(body.at("/systemInstruction/parts/0/text").asString()).isEqualTo("sys");
         assertThat(body.at("/contents/0/parts/0/text").asString()).isEqualTo("page text");
         assertThat(body.at("/generationConfig/responseMimeType").asString()).isEqualTo("application/json");
-        assertThat(body.at("/generationConfig/thinkingConfig/thinkingBudget").asInt(-1)).isZero();
+        assertThat(body.at("/generationConfig/thinkingConfig/thinkingLevel").asString()).isEqualTo("minimal");
+        assertThat(body.at("/generationConfig/thinkingConfig/thinkingBudget").isMissingNode()).isTrue();
         assertThat(response.text()).isEqualTo("{}");
     }
 

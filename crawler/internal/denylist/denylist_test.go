@@ -41,6 +41,7 @@ func TestBanned_NormalizesHost(t *testing.T) {
 		{bannedHost, true},
 		{bannedHost + "/path", true},
 		{"http://www." + bannedHost + "/", true},
+		{" " + upper + ":8080/x", true},
 		{"http://" + otherHost + "/", false},
 		{"http://ahmia.fi/onions/", false},
 		{"::not a url", false},

@@ -90,17 +90,11 @@ func extractLinks(rawHTML []byte, baseURL string) []string {
 	}
 	var walk func(n *html.Node)
 	walk = func(n *html.Node) {
-		switch {
-		case n.Type == html.ElementNode && (n.Data == "script" || n.Data == "style"):
+		if n.Type == html.ElementNode && (n.Data == "script" || n.Data == "style") {
 			return // code, not page text
-		case n.Type == html.ElementNode && n.Data == "a":
-			if href, ok := attrValue(n, "href"); ok {
-				add(resolveURL(href, baseURL))
-			}
-		case n.Type == html.TextNode:
-			for _, m := range onionAddr.FindAllStringSubmatch(n.Data, -1) {
-				add(textURL(m[1], m[2], m[3]))
-			}
+		}
+		for _, u := range nodeLinks(n, baseURL) {
+			add(u)
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
 			walk(c)
@@ -110,10 +104,28 @@ func extractLinks(rawHTML []byte, baseURL string) []string {
 	return links
 }
 
+// nodeLinks returns the links n itself carries: its href if it is an <a>, or the onion
+// addresses in it if it is a text node.
+func nodeLinks(n *html.Node, baseURL string) []string {
+	switch {
+	case n.Type == html.ElementNode && n.Data == "a":
+		if href, ok := attrValue(n, "href"); ok {
+			return []string{resolveURL(href, baseURL)}
+		}
+	case n.Type == html.TextNode:
+		var links []string
+		for _, m := range onionAddr.FindAllStringSubmatch(n.Data, -1) {
+			links = append(links, textURL(m[1], m[2], m[3]))
+		}
+		return links
+	}
+	return nil
+}
+
 // textURL builds the URL of an address found in text: no scheme means http, no path means "/".
 func textURL(scheme, host, path string) string {
 	if scheme == "" {
-		scheme = "http://"
+		scheme = "http://" // NOSONAR onion services speak plain HTTP; Tor encrypts the circuit end to end
 	}
 	if path == "" {
 		path = "/"

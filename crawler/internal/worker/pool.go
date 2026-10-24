@@ -31,8 +31,8 @@ type Frontier interface {
 	Enqueue(parentDepth int, rawHTML []byte, baseURL string)
 }
 
-// Denylist describes *denylist.Denylist: whether a URL's host must never be fetched.
-type Denylist interface {
+// BanChecker describes *denylist.Denylist: whether a URL's host must never be fetched.
+type BanChecker interface {
 	Banned(rawURL string) bool
 }
 
@@ -42,11 +42,11 @@ type Pool struct {
 	dedup          Deduper
 	pub            Publisher
 	frontier       Frontier
-	deny           Denylist
+	deny           BanChecker
 	politenessWait time.Duration
 }
 
-func New(n int, conn connector.SourceConnector, d Deduper, p Publisher, f Frontier, deny Denylist, politeness time.Duration) *Pool {
+func New(n int, conn connector.SourceConnector, d Deduper, p Publisher, f Frontier, deny BanChecker, politeness time.Duration) *Pool {
 	return &Pool{workers: n, conn: conn, dedup: d, pub: p, frontier: f, deny: deny, politenessWait: politeness}
 }
 

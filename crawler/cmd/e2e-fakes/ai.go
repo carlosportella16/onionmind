@@ -90,45 +90,11 @@ func aiHandler() http.Handler {
 		call := r.PathValue("call")
 		switch {
 		case strings.HasSuffix(call, ":generateContent"):
-			var req struct {
-				SystemInstruction geminiContent   `json:"systemInstruction"`
-				Contents          []geminiContent `json:"contents"`
-			}
-			if !decode(w, r, &req) {
-				return
-			}
-			prompt := req.SystemInstruction.text()
-			for _, c := range req.Contents {
-				prompt += "\n" + c.text()
-			}
-			out, _ := json.Marshal(answer(prompt))
-			writeJSON(w, map[string]any{"candidates": []any{
-				map[string]any{"content": geminiContent{Parts: []geminiPart{{Text: string(out)}}}},
-			}})
+			geminiGenerate(w, r)
 		case strings.HasSuffix(call, ":batchEmbedContents"):
-			var req struct {
-				Requests []struct {
-					Content geminiContent `json:"content"`
-				} `json:"requests"`
-			}
-			if !decode(w, r, &req) {
-				return
-			}
-			embeddings := make([]any, len(req.Requests))
-			for i, e := range req.Requests {
-				embeddings[i] = map[string]any{"values": embed(rolePrefix.ReplaceAllString(e.Content.text(), ""))}
-			}
-			writeJSON(w, map[string]any{"embeddings": embeddings})
+			geminiBatchEmbed(w, r)
 		case strings.HasSuffix(call, ":embedContent"):
-			var req struct {
-				Content geminiContent `json:"content"`
-			}
-			if !decode(w, r, &req) {
-				return
-			}
-			writeJSON(w, map[string]any{"embedding": map[string]any{
-				"values": embed(rolePrefix.ReplaceAllString(req.Content.text(), "")),
-			}})
+			geminiEmbed(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -182,4 +148,50 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 func writeJSON(w http.ResponseWriter, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(body)
+}
+
+func geminiGenerate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SystemInstruction geminiContent   `json:"systemInstruction"`
+		Contents          []geminiContent `json:"contents"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	prompt := req.SystemInstruction.text()
+	for _, c := range req.Contents {
+		prompt += "\n" + c.text()
+	}
+	out, _ := json.Marshal(answer(prompt))
+	writeJSON(w, map[string]any{"candidates": []any{
+		map[string]any{"content": geminiContent{Parts: []geminiPart{{Text: string(out)}}}},
+	}})
+}
+
+func geminiBatchEmbed(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Requests []struct {
+			Content geminiContent `json:"content"`
+		} `json:"requests"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	embeddings := make([]any, len(req.Requests))
+	for i, e := range req.Requests {
+		embeddings[i] = map[string]any{"values": embed(rolePrefix.ReplaceAllString(e.Content.text(), ""))}
+	}
+	writeJSON(w, map[string]any{"embeddings": embeddings})
+}
+
+func geminiEmbed(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Content geminiContent `json:"content"`
+	}
+	if !decode(w, r, &req) {
+		return
+	}
+	writeJSON(w, map[string]any{"embedding": map[string]any{
+		"values": embed(rolePrefix.ReplaceAllString(req.Content.text(), "")),
+	}})
 }

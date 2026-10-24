@@ -61,7 +61,8 @@ func (d *Denylist) Banned(rawURL string) bool {
 	if host == "" {
 		return false
 	}
-	sum := md5.Sum([]byte(host))
+	// MD5 because that is the format ahmia publishes the list in: a lookup key, not a security control.
+	sum := md5.Sum([]byte(host)) // NOSONAR
 	_, ok := d.hashes[hex.EncodeToString(sum[:])]
 	return ok
 }
@@ -71,7 +72,7 @@ func (d *Denylist) Banned(rawURL string) bool {
 func domain(rawURL string) string {
 	raw := strings.TrimSpace(rawURL)
 	if !strings.Contains(raw, "://") {
-		raw = "http://" + raw
+		raw = "//" + raw // network-path reference, so url.Parse reads a bare host as the host
 	}
 	u, err := url.Parse(raw)
 	if err != nil {

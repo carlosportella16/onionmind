@@ -61,13 +61,13 @@ public class SearchController {
             return ResponseEntity.ok(new SearchResponse(textResults, textTotal, page, size));
         }
 
-        // Fusão simples (Fase 2, roadmap master-sdd sec. 5) só combina as duas fontes na
-        // primeira página; hybrid retrieval paginado de verdade (RRF k=60) é escopo da Fase 5.
+        // RRF k=60 (phase5-rag-chat D2) só combina as duas fontes na primeira página; as
+        // seguintes seguem só com o full-text, como antes — o contrato não muda.
         if (page > 0) {
             return ResponseEntity.ok(new SearchResponse(textResults, textTotal, page, size));
         }
 
-        List<SearchResult> fused = HybridRanker.fuse(textResults, semanticResults, effectiveSize);
+        List<SearchResult> fused = ReciprocalRankFusion.fuse(textResults, semanticResults, effectiveSize);
         long fusedTotal = unionSize(textResults, semanticResults);
         return ResponseEntity.ok(new SearchResponse(fused, fusedTotal, page, size));
     }

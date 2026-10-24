@@ -237,4 +237,57 @@ class PageRepositoryTest {
         assertThat(jdbc.queryForObject(
             "SELECT count(*) FROM quarantined_pages WHERE url = ?", Integer.class, url)).isEqualTo(1);
     }
+
+    @Test
+    void archivedVersionKeepsTheEnrichmentThatBelongedToIt() {
+        String url = "http://snapshot-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "version one content"));
+        repository.updateAiFields(url, AiOutcome.processed(Enrichment.EMPTY
+            .withSummary(new Summary("resumo v1", 0.9))
+            .withCategory(new Classification("forum", 0.8))
+            .withEntities(java.util.List.of(com.onionmind.content.ExtractedEntity.of(
+                com.onionmind.content.EntityType.PERSON, "Ana", 0.9)))));
+
+        repository.upsertWithVersioning(doc(url, "version two content"));
+
+        var v1 = jdbc.queryForMap("""
+            SELECT extracted_text, summary->>'text' AS summary, category->>'category' AS category,
+                   entities->0->>'key' AS entity
+            FROM page_versions WHERE page_id = (SELECT id FROM pages WHERE url = ?) AND version = 1
+            """, url);
+        assertThat(v1).containsEntry("extracted_text", "version one content").containsEntry("summary", "resumo v1")
+            .containsEntry("category", "forum").containsEntry("entity", "ana");
+    }
+
+    @Test
+    void versionNeverEnrichedIsArchivedWithoutEnrichment() {
+        String url = "http://snapshot-pending-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "version one content"));
+        repository.updateAiFields(url, AiOutcome.processed(Enrichment.EMPTY.withSummary(new Summary("resumo v1", 0.9))));
+        repository.upsertWithVersioning(doc(url, "version two content")); // v2 pending, still has v1's summary
+
+        repository.upsertWithVersioning(doc(url, "version three content"));
+
+        var v2 = jdbc.queryForMap("""
+            SELECT extracted_text, summary FROM page_versions
+            WHERE page_id = (SELECT id FROM pages WHERE url = ?) AND version = 2
+            """, url);
+        assertThat(v2).containsEntry("extracted_text", "version two content").containsEntry("summary", null);
+    }
+
+    @Test
+    void quarantineAlsoStripsArchivedVersions() {
+        String url = "http://quarantine-history-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "version one content"));
+        repository.upsertWithVersioning(doc(url, "version two content"));
+        repository.upsertWithVersioning(doc(url, "version three content"));
+
+        repository.quarantine(doc(url, "version four, blocked"), "url-denylist");
+
+        assertThat(jdbc.queryForObject("""
+            SELECT count(*) FROM page_versions
+            WHERE page_id = (SELECT id FROM pages WHERE url = ?) AND extracted_text IS NOT NULL
+            """, Integer.class, url)).isZero();
+        assertThat(archivedCountFor(url)).isEqualTo(2);
+    }
 }

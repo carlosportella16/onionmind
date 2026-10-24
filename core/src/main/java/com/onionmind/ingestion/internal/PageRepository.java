@@ -55,7 +55,8 @@ public class PageRepository {
 
     /**
      * A page the illegal-content guard blocked: record it for audit and make sure no
-     * content is stored — strip an existing row, or insert a minimal one if none exists.
+     * content is stored — strip an existing row and its archived versions, or insert a
+     * minimal one if none exists.
      */
     public void quarantine(Document doc, String reason) {
         String hash = sha256(doc.extractedText() == null ? "" : doc.extractedText());
@@ -78,19 +79,50 @@ public class PageRepository {
                 VALUES (?, ?, ?, 'quarantined')
                 """, doc.url(), doc.sourceType(), hash);
         }
+
+        // Archived versions held the same content (and what the LLM derived from it).
+        jdbc.update("""
+            UPDATE page_versions
+            SET extracted_text = NULL, entities = NULL, summary = NULL
+            WHERE page_id = (SELECT id FROM pages WHERE url = ?)
+            """, doc.url());
     }
 
-    /** Writes the Fase 3 enrichment (summary/category/language/translation JSONB + ai_status). */
+    /** Writes the enrichment (summary/category/language/translation/entities JSONB + ai_status). */
     public void updateAiFields(String url, AiOutcome outcome) {
+        update(url, null, outcome);
+    }
+
+    /**
+     * Same, but only if the page still has {@code contentHash}: a re-crawl that changed the
+     * content while the backfill was busy must not get the previous version's enrichment.
+     *
+     * @return whether the row was updated
+     */
+    public boolean updateAiFields(String url, String contentHash, AiOutcome outcome) {
+        return update(url, contentHash, outcome) == 1;
+    }
+
+    private int update(String url, String contentHash, AiOutcome outcome) {
         Enrichment e = outcome.enrichment();
-        jdbc.update("""
+        return jdbc.update("""
             UPDATE pages
             SET summary = ?::jsonb, category = ?::jsonb, language = ?::jsonb, translated_text = ?::jsonb,
-                ai_status = ?, ai_processed_at = now(), ai_error_message = ?
-            WHERE url = ?
+                entities = ?::jsonb, ai_status = ?, ai_processed_at = now(), ai_error_message = ?
+            WHERE url = ? AND (?::text IS NULL OR content_hash = ?)
             """,
-            summaryJson(e), categoryJson(e), languageJson(e), translationJson(e),
-            outcome.status(), outcome.errorMessage(), url);
+            summaryJson(e), categoryJson(e), languageJson(e), translationJson(e), entitiesJson(e),
+            outcome.status(), outcome.errorMessage(), url, contentHash, contentHash);
+    }
+
+    private String entitiesJson(Enrichment e) {
+        if (e.entities().isEmpty()) {
+            return null;
+        }
+        return mapper.writeValueAsString(e.entities().stream()
+            .map(x -> Map.of("type", x.type().code(), "key", x.key(), "display", x.display(),
+                "confidence", x.confidence()))
+            .toList());
     }
 
     private String summaryJson(Enrichment e) {
@@ -138,11 +170,21 @@ public class PageRepository {
             """, doc.url(), doc.sourceType(), doc.rawHtml(), doc.extractedText(), hash);
     }
 
+    /**
+     * Archives the current row with the enrichment it has — but only when that enrichment
+     * belongs to this version (ai_status 'processed'; a content change resets it to
+     * 'pending'). The change diff uses the last snapshot with enrichment as its baseline.
+     */
     private void archiveVersion(PageEntity current) {
         jdbc.update("""
-            INSERT INTO page_versions (page_id, version, content_hash, extracted_text)
-            VALUES (?, ?, ?, ?)
-            """, current.id(), current.version(), current.contentHash(), current.extractedText());
+            INSERT INTO page_versions (page_id, version, content_hash, extracted_text, entities, category, summary)
+            SELECT id, version, content_hash, extracted_text,
+                   CASE WHEN ai_status = 'processed' THEN entities END,
+                   CASE WHEN ai_status = 'processed' THEN category END,
+                   CASE WHEN ai_status = 'processed' THEN summary END
+            FROM pages WHERE id = ?
+            ON CONFLICT (page_id, version) DO NOTHING
+            """, current.id());
     }
 
     private void updateWithNewVersion(Document doc, String hash, int newVersion) {

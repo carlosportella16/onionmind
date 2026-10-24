@@ -34,14 +34,6 @@ public class Fase3Steps {
         fakes.categoryAnswer = category;
     }
 
-    @Dado("que a página {string} foi publicada com um texto longo em português")
-    public void publishLongText(String url) {
-        // > 500 approx tokens (2000+ chars): the router sends this to the cloud ladder first.
-        String sentence = "Este artigo em português explica com calma como a comunidade organiza os seus "
-            + "encontros, quais regras de convivência existem e por que a privacidade importa para todos. ";
-        common.publishText(url, sentence.repeat(14));
-    }
-
     /** Fills the per-minute counter the way a burst of real traffic (or a 429) would — design D7. */
     @Dado("que o provedor {string} está sem cota no minuto corrente")
     public void exhaustMinuteQuota(String provider) {
@@ -133,14 +125,14 @@ public class Fase3Steps {
     private com.onionmind.ai.FakeHttpServer server(String provider) {
         return switch (provider) {
             case "ollama" -> fakes.ollama;
-            case "groq" -> fakes.groq;
+            case "deepseek" -> fakes.deepseek;
             case "gemini" -> fakes.gemini;
             default -> throw new IllegalArgumentException("unknown provider " + provider);
         };
     }
 
     private java.util.List<String> generationBodies() {
-        return java.util.stream.Stream.of(fakes.ollama, fakes.groq, fakes.gemini)
+        return java.util.stream.Stream.of(fakes.ollama, fakes.deepseek, fakes.gemini)
             .flatMap(s -> s.requestBodies.stream()).toList();
     }
 

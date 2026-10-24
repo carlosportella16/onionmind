@@ -8,26 +8,23 @@ import io.micrometer.core.instrument.Timer;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
 import java.util.function.Supplier;
 
 /**
  * Micrometer instrumentation for the orchestrator (SDD sec. 15 / fase3-sdd sec. 10):
  * request count by provider+task+outcome, a duration histogram, a confidence distribution,
- * and a remaining-quota gauge per cloud provider. Duration is in seconds — a separate
+ * and a remaining-quota gauge per provider with configured limits. Duration is in seconds — a separate
  * scale from search latency (ms).
  */
 @Component
 @ConditionalOnExpression("${ai.enabled:false}")
 public class MetricsDecorator {
 
-    private static final List<String> CLOUD_PROVIDERS = List.of("groq", "gemini");
-
     private final MeterRegistry registry;
 
     public MetricsDecorator(MeterRegistry registry, ProviderQuotaTracker quotaTracker) {
         this.registry = registry;
-        for (String provider : CLOUD_PROVIDERS) {
+        for (String provider : quotaTracker.trackedProviders()) {
             Gauge.builder("ai.quota.remaining", quotaTracker, t -> t.remaining(provider).remaining())
                 .tag("provider", provider)
                 .register(registry);

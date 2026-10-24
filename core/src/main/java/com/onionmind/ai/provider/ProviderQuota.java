@@ -1,8 +1,8 @@
 package com.onionmind.ai.provider;
 
 /**
- * Free-tier headroom for a provider. {@code limit == Long.MAX_VALUE} marks the local
- * provider, which is never gated by quota (SDD sec. 7.3 — "Ollama nunca estoura quota").
+ * Request headroom for a provider. {@code limit == Long.MAX_VALUE} marks a provider without
+ * configured limits (the last rung, DeepSeek), which is never gated by quota — only parked.
  */
 public record ProviderQuota(long remaining, long limit) {
 

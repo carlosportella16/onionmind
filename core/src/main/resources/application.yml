@@ -132,22 +132,28 @@ ai:
     batch-size: 20             # pages per scheduled run of AiEnrichmentBackfillJob
     interval-ms: 300000
     max-attempts: 5            # failed runs before a page goes failed_permanent; new content resets it
-  ollama:
-    generate-model: llama3.1:8b
-    timeout: 120s              # local generation on a small VM is slow
-  groq:
-    base-url: https://api.groq.com/openai/v1
-    model: openai/gpt-oss-120b   # llama-3.3-70b-versatile was decommissioned by Groq (validated live Sep 2026)
-    api-key: ${GROQ_API_KEY:}
-    daily-limit: 14400
-    minute-limit: 30
+  # One ladder for every task, cheapest first (replace-ollama-with-gemini-deepseek D3). Only
+  # paid providers: .onion content must not reach a free tier that trains on it (2026-10-24).
+  ladder: gemini,deepseek
+  # Request ceilings per provider id. A provider without an entry (deepseek) is never gated by
+  # quota — its prepaid balance is the spending cap, and a 402 parks it (D5).
+  providers:
+    # Placeholders for the paid tier: the real per-project numbers live in AI Studio
+    # (ai.google.dev rate-limits, 2026-10-15) — confirm before production.
+    gemini: { requests-per-minute: 1000, requests-per-day: 10000 }
   gemini:
     base-url: https://generativelanguage.googleapis.com/v1beta
-    model: gemini-2.5-flash
-    api-key: ${GEMINI_API_KEY:}
-    daily-limit: 1500
-    minute-limit: 15
-  # Limits are August 2026 free-tier numbers (sdd sec. 9) — reconfirm before production.
+    model: gemini-2.5-flash-lite   # US$ 0.10 / 0.40 per 1M tokens, thinking off (D2)
+    api-key: ${GEMINI_API_KEY:}    # key of a project WITH billing — never a free-tier key
+  # OpenAI-compatible providers, one bean per id (D1). extra-body goes into every request.
+  openai-compatible:
+    deepseek:
+      base-url: https://api.deepseek.com
+      model: deepseek-flash
+      api-key: ${DEEPSEEK_API_KEY:}
+      extra-body:
+        "[response_format]": { type: json_object }
+        thinking: { type: disabled }
 
 illegal-content:
   # Curated lists live outside the repo (audited separately, fase3-sdd sec. 7.5, D3).

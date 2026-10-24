@@ -19,7 +19,9 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectReader;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * The real Fase 3 orchestrator (SDD sec. 7.2). {@code summarize}/{@code classify}/{@code translate}
@@ -144,9 +146,17 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
         ValidatedResult best = null;
         ProviderException lastError = null;
         TaskContext current = ctx;
+        Set<String> tried = new HashSet<>();
+        boolean quotaOnly = true; // until some provider actually answers or fails for another reason
 
         for (int attempt = 0; attempt <= maxEscalations; attempt++) {
-            AIProvider provider = router.select(current.withAttempt(attempt));
+            AIProvider provider;
+            try {
+                provider = router.select(current.withAttempt(attempt), tried);
+            } catch (AllProvidersExhaustedException e) {
+                break; // nothing left with quota: settle with what we have
+            }
+            tried.add(provider.id());
             ValidatedResult validated;
             try {
                 CompletionResponse raw = metrics.timed(ctx.type(), provider.id(),
@@ -155,10 +165,12 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
                 validated = validator.validate(raw, ctx.type());
             } catch (ProviderException e) {
                 lastError = e;
+                quotaOnly &= e.rateLimited();
                 metrics.recordOutcome(provider.id(), ctx.type(), "transient_fail");
                 log.warn("AI provider {} failed for {}: {}", provider.id(), ctx.type(), e.getMessage());
                 continue;
             }
+            quotaOnly = false;
 
             metrics.recordConfidence(ctx.type(), validated.confidence());
             if (best == null || validated.confidence() > best.confidence()) {
@@ -178,7 +190,9 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
             return best;
         }
 
-        metrics.recordOutcome("none", ctx.type(), "exhausted");
-        throw new AllProvidersExhaustedException("all providers failed for " + ctx.type(), lastError);
+        metrics.recordOutcome("none", ctx.type(), quotaOnly ? "no_quota" : "exhausted");
+        throw new AllProvidersExhaustedException(
+            (quotaOnly ? "no AI provider with quota for " : "all providers failed for ") + ctx.type(),
+            quotaOnly, lastError);
     }
 }

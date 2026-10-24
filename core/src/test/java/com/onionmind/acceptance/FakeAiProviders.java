@@ -34,7 +34,7 @@ final class FakeAiProviders implements AutoCloseable {
     private final ObjectMapper mapper = JsonMapper.builder().build();
 
     final FakeHttpServer ollama = new FakeHttpServer();
-    final FakeHttpServer groq = new FakeHttpServer();
+    final FakeHttpServer deepseek = new FakeHttpServer();
     final FakeHttpServer gemini = new FakeHttpServer();
 
     /** What the fake model answers to a classification prompt; scenarios may override it. */
@@ -45,15 +45,15 @@ final class FakeAiProviders implements AutoCloseable {
         ollama.responder = (path, body) -> path.endsWith("/api/embed")
             ? json(Map.of("embeddings", List.of(toList(embed(field(body, "input"))))))
             : json(Map.of("response", answer(body, "ollama")));
-        groq.responder = (path, body) -> json(Map.of("choices",
-            List.of(Map.of("message", Map.of("content", answer(body, "groq"))))));
+        deepseek.responder = (path, body) -> json(Map.of("choices",
+            List.of(Map.of("message", Map.of("content", answer(body, "deepseek"))))));
         gemini.responder = (path, body) -> json(Map.of("candidates",
             List.of(Map.of("content", Map.of("parts", List.of(Map.of("text", answer(body, "gemini"))))))));
     }
 
     void reset() {
         categoryAnswer = "forum";
-        for (FakeHttpServer s : List.of(ollama, groq, gemini)) {
+        for (FakeHttpServer s : List.of(ollama, deepseek, gemini)) {
             s.requestBodies.clear();
             s.requestPaths.clear();
             s.authHeaders.clear();
@@ -147,7 +147,7 @@ final class FakeAiProviders implements AutoCloseable {
     @Override
     public void close() {
         ollama.close();
-        groq.close();
+        deepseek.close();
         gemini.close();
     }
 }

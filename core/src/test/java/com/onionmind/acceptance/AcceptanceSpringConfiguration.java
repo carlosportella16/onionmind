@@ -24,7 +24,7 @@ import org.testcontainers.neo4j.Neo4jContainer;
     "ai.backfill.interval-ms=3600000",
     "embedding.backfill-interval-ms=3600000",
     "ai.retry.backoff=10ms",
-    "ai.groq.api-key=acceptance-test-key",
+    "ai.openai-compatible.deepseek.api-key=acceptance-test-key",
     "ai.gemini.api-key=acceptance-test-key",
     "qdrant.vector-size=" + FakeAiProviders.DIMENSIONS,
     // ~100 chars per chunk, so a page with a few hundred chars spans several chunks
@@ -66,7 +66,7 @@ public class AcceptanceSpringConfiguration {
                 registry.add("qdrant.url", qdrantContainer::getHost);
                 registry.add("qdrant.port", () -> qdrantContainer.getMappedPort(6333));
                 registry.add("ollama.url", fakes.ollama::baseUrl);
-                registry.add("ai.groq.base-url", fakes.groq::baseUrl);
+                registry.add("ai.openai-compatible.deepseek.base-url", fakes.deepseek::baseUrl);
                 registry.add("ai.gemini.base-url", fakes.gemini::baseUrl);
             };
         }

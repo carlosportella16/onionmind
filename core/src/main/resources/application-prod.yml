@@ -53,7 +53,8 @@ ai:
     max-attempts: 5
   ladder: gemini,deepseek
   providers:
-    gemini: { requests-per-minute: 1000, requests-per-day: 10000, tokens-per-minute: 1000000, tokens-per-day: 20000000 }
+    # Same as application.yml (AI Studio, 2026-10-24, free tier) — raise after billing is on.
+    gemini: { requests-per-minute: 15, requests-per-day: 500, tokens-per-minute: 250000 }
   gemini:
     base-url: https://generativelanguage.googleapis.com/v1beta
     model: ${GEMINI_MODEL:gemini-3.5-flash-lite}

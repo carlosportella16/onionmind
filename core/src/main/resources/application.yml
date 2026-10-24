@@ -144,9 +144,11 @@ ai:
   # tracked. A provider without an entry (deepseek) is never gated by quota — its prepaid
   # balance is the spending cap, and a 402 parks it (D5).
   providers:
-    # Placeholders for the paid tier: the real per-project numbers are only shown in AI Studio,
-    # not published (ai.google.dev rate-limits, updated 2026-10-15) — confirm before production.
-    gemini: { requests-per-minute: 1000, requests-per-day: 10000, tokens-per-minute: 1000000, tokens-per-day: 20000000 }
+    # Read in AI Studio (aistudio.google.com/rate-limit, project dfOps, 2026-10-24) for
+    # gemini-3.5-flash-lite: 15 RPM, 250K input TPM, 500 RPD; no tokens-per-day is shown, so it
+    # is left out. The project is still on the FREE tier — raise these after billing is on.
+    # gemini-embedding-2 (not gated here): 100 RPM, 30K TPM, 1K RPD on the same page.
+    gemini: { requests-per-minute: 15, requests-per-day: 500, tokens-per-minute: 250000 }
   gemini:
     base-url: https://generativelanguage.googleapis.com/v1beta
     # gemini-2.5-flash-lite is closed to new users (HTTP 404, 2026-10-24); 3.5 Flash-Lite is what

@@ -65,6 +65,9 @@ func conceptAxis(word string) int {
 // answer recognises the core's task from DefaultAIOrchestrator's fixed system prompts.
 func answer(prompt string) map[string]any {
 	switch {
+	case strings.Contains(prompt, "Extraia do texto as entidades"):
+		// Named entities only; the e2e wallet/onion address come from the core's own patterns.
+		return map[string]any{"entities": []any{}, "confidence": 0.9}
 	case strings.Contains(prompt, "Classifique"):
 		return map[string]any{"category": "forum", "confidence": 0.9}
 	case strings.Contains(prompt, "Traduza"):

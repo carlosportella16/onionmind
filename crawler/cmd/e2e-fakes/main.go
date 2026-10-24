@@ -24,6 +24,7 @@ var pages = map[string]string{
 </body></html>`,
 	"linkada-e2e.onion": `<html><body>
 <p>Página descoberta por link, que fala do quetzal e da comunidade que mantém o portal desde o início.</p>
+<p>Doações para 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa. Espelho em 2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion.</p>
 </body></html>`,
 	"conceito-e2e.onion": `<html><body>
 <p>Mercado aceita moeda digital anônima e registra tudo num blockchain descentralizado para os compradores da rede.</p>

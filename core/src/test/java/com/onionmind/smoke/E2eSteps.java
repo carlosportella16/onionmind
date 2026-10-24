@@ -53,6 +53,17 @@ public class E2eSteps {
                 .isGreaterThanOrEqualTo(min));
     }
 
+    @Então("em até {int} segundos a entidade {string} {string} lista a página {string}")
+    public void eventuallyEntityListsPage(int seconds, String type, String key, String url) {
+        await().atMost(Duration.ofSeconds(seconds)).pollInterval(Duration.ofSeconds(1)).untilAsserted(() -> {
+            HttpJson response = HttpJson.get(SmokeSteps.BASE_URL + "/api/entities/" + type + "/" + HttpJson.encode(key));
+            assertThat(response.status()).as(response.body()).isEqualTo(200);
+            List<String> pages = new ArrayList<>();
+            response.json().path("pages").forEach(p -> pages.add(p.path("url").asString()));
+            assertThat(pages).contains(url);
+        });
+    }
+
     private static List<JsonNode> search(String path, String query) {
         HttpJson response = HttpJson.get(SmokeSteps.BASE_URL + path + "?q=" + HttpJson.encode(query));
         assertThat(response.status()).as(response.body()).isEqualTo(200);

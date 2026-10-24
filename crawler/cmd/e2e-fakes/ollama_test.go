@@ -56,6 +56,7 @@ func TestOllamaHandlerSpeaksTheEmbedAndGenerateContracts(t *testing.T) {
 		"Traduza o texto":               "translation",
 		"Identifique o idioma":          "language",
 		"Você resume páginas da web em": "summary",
+		"Extraia do texto as entidades": "entities",
 	}
 	for system, field := range tasks {
 		body := `{"model":"m","system":"` + system + `","prompt":"texto","stream":false}`

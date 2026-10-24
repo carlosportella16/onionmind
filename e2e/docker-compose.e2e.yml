@@ -1,4 +1,4 @@
-# End-to-end smoke stack (change crawler-integration-and-e2e-smoke). Everything external
+# End-to-end smoke stack (change crawler-integration-and-e2e-smoke, Neo4j since Fase 4). Everything external
 # is faked by e2e-fakes — Tor (SOCKS5), the .onion sites and Ollama — so it runs with no
 # network access to Tor or any AI provider. Run it through scripts/e2e-smoke.sh.
 # Only the core's port is published, so it can run next to the dev docker-compose.yml
@@ -47,6 +47,15 @@ services:
       interval: 2s
       retries: 30
 
+  neo4j:
+    image: neo4j:5-community
+    environment:
+      NEO4J_AUTH: neo4j/onionmind_dev_only
+    healthcheck:
+      test: ["CMD-SHELL", "cypher-shell -u neo4j -p onionmind_dev_only 'RETURN 1' || exit 1"]
+      interval: 2s
+      retries: 60
+
   fakes:
     build:
       context: ../crawler
@@ -73,6 +82,8 @@ services:
       - --ai.enabled=true
       - --ai.backfill.interval-ms=5000
       - --illegal-content.url-denylist-path=file:/e2e/denylist.txt
+      - --graph.enabled=true
+      - --spring.neo4j.uri=bolt://neo4j:7687
     volumes:
       - ../core/build/libs/core-0.0.1-SNAPSHOT.jar:/app/core.jar:ro
       - ./denylist.txt:/e2e/denylist.txt:ro
@@ -82,6 +93,7 @@ services:
       redpanda: { condition: service_healthy }
       redis: { condition: service_healthy }
       qdrant: { condition: service_healthy }
+      neo4j: { condition: service_healthy }
       fakes: { condition: service_healthy }
 
   # The real crawler image (crawler/Dockerfile), pointed at the fake Tor.

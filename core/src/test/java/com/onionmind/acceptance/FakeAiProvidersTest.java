@@ -38,4 +38,24 @@ class FakeAiProvidersTest {
         assertThat(cosine(v, v)).isCloseTo(1.0, org.assertj.core.data.Offset.offset(1e-5));
         assertThat(cosine(embed(""), embed(""))).isCloseTo(1.0, org.assertj.core.data.Offset.offset(1e-5));
     }
+
+    @Test
+    void entityPromptReturnsOnlyTheKnownNamesPresentInTheText() throws Exception {
+        try (FakeAiProviders fakes = new FakeAiProviders()) {
+            var reply = fakes.ollama.responder.apply("/api/generate",
+                "{\"prompt\": \"Extraia do texto as entidades nomeadas... Fale com Ana Souza hoje.\"}");
+
+            assertThat(reply.body()).contains("Ana Souza", "person").doesNotContain("Mercado Sombrio");
+        }
+    }
+
+    @Test
+    void marketplacesAreClassifiedByName() throws Exception {
+        try (FakeAiProviders fakes = new FakeAiProviders()) {
+            assertThat(fakes.ollama.responder.apply("/api/generate", "{\"prompt\": \"Classifique: Mercado X\"}").body())
+                .contains("marketplace");
+            assertThat(fakes.ollama.responder.apply("/api/generate", "{\"prompt\": \"Classifique: um blog\"}").body())
+                .contains("forum");
+        }
+    }
 }

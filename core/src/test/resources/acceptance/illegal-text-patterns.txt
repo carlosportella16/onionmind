@@ -1,0 +1,2 @@
+# Padrões barrados nos cenários de aceitação (features/fase4: página já indexada que passa a ser bloqueada).
+marcador-proibido-aceitacao

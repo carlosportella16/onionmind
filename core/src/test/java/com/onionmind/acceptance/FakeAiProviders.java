@@ -65,11 +65,24 @@ final class FakeAiProviders implements AutoCloseable {
         return server.requestPaths.stream().filter(p -> !p.endsWith("/api/embed")).count();
     }
 
+    /** Named entities the fake model "recognises" when they appear in the page text (Fase 4). */
+    static final Map<String, String> KNOWN_ENTITIES = Map.of(
+        "Ana Souza", "person", "Mercado Sombrio", "organization");
+
     /** Task type is recognised from the orchestrator's fixed system prompts (ASCII parts only). */
     private String answer(String requestBody, String provider) {
         Map<String, Object> payload;
-        if (requestBody.contains("Classifique")) {
-            payload = Map.of("category", categoryAnswer, "confidence", 0.9);
+        if (requestBody.contains("Extraia do texto as entidades")) {
+            String text = requestBody;
+            payload = Map.of("entities", KNOWN_ENTITIES.entrySet().stream()
+                .filter(e -> text.contains(e.getKey()))
+                .sorted(Map.Entry.comparingByKey())
+                .map(e -> Map.of("type", e.getValue(), "value", e.getKey(), "confidence", 0.9))
+                .toList(), "confidence", 0.9);
+        } else if (requestBody.contains("Classifique")) {
+            // Marketplaces are recognisable by name, so Fase 4 can mix categories in one scenario.
+            payload = Map.of("category", requestBody.contains("Mercado") ? "marketplace" : categoryAnswer,
+                "confidence", 0.9);
         } else if (requestBody.contains("Traduza")) {
             payload = Map.of("translation", "Tradução automática (" + provider + ") para português.",
                 "detectedLanguage", "en", "confidence", 0.9);

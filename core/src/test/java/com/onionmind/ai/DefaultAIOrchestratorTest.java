@@ -11,6 +11,7 @@ import com.onionmind.ai.provider.CompletionResponse;
 import com.onionmind.ai.provider.ProviderException;
 import com.onionmind.ai.provider.ProviderQuota;
 import com.onionmind.ai.routing.CostOptimizerRouter;
+import com.onionmind.ai.routing.ProviderLimits;
 import com.onionmind.ai.routing.ProviderQuotaTracker;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.BeforeEach;
@@ -43,7 +44,7 @@ class DefaultAIOrchestratorTest {
         deepseek = new ScriptedProvider("deepseek");
         embedServer = new com.onionmind.ai.FakeHttpServer();
 
-        CostOptimizerRouter router = new CostOptimizerRouter(List.of(gemini, deepseek), List.of("gemini", "deepseek"), 5);
+        CostOptimizerRouter router = new CostOptimizerRouter(List.of(gemini, deepseek), List.of("gemini", "deepseek"), 5, 30);
         ProviderQuotaTracker tracker = new ProviderQuotaTracker(
             RedisTestSupport.template(), Clock.systemUTC(), Map.of());
         cache = new CacheDecorator(RedisTestSupport.template(), Duration.ofHours(1));
@@ -267,6 +268,44 @@ class DefaultAIOrchestratorTest {
             assertThat(r.systemPrompt()).isEqualTo(DefaultAIOrchestrator.SUMMARIZE_PROMPT);
             assertThat(r.userPrompt()).isEqualTo(TEXT);
         });
+    }
+
+    @Test
+    void recordsTheTokensTheProviderReportedOrAnEstimate() {
+        ProviderQuotaTracker tracker = new ProviderQuotaTracker(RedisTestSupport.template(), Clock.systemUTC(),
+            Map.of("gemini", new ProviderLimits(10_000, 1_000, 10_000_000, 1_000_000)));
+        DefaultAIOrchestrator counting = orchestratorWith(tracker);
+
+        gemini.script(() -> new CompletionResponse("{\"summary\":\"a\",\"confidence\":0.9}", 2150));
+        counting.summarize(TEXT, shortCtx());
+        assertThat(tracker.remaining("gemini").tokensRemaining()).isEqualTo(1_000_000 - 2150);
+
+        // no usage reported: (system prompt + text + answer) / 4
+        String answer = "{\"category\":\"forum\",\"confidence\":0.9}";
+        gemini.script(ok(answer));
+        counting.classify("outro texto", TaskContext.batch(TaskContext.TaskType.CLASSIFY, 10, "en", false));
+        long estimate = (gemini.requests.get(1).systemPrompt().length() + "outro texto".length() + answer.length()) / 4;
+        assertThat(tracker.remaining("gemini").tokensRemaining()).isEqualTo(1_000_000 - 2150 - estimate);
+    }
+
+    @Test
+    void skipsAProviderWhoseTokenBudgetCannotFitThePrompt() {
+        gemini.quota = new ProviderQuota(1000, 1000, 10, 1_000_000); // 10 tokens left
+        deepseek.script(ok("{\"summary\":\"do deepseek\",\"confidence\":0.9}"));
+
+        assertThat(orchestrator.summarize(TEXT, shortCtx()).text()).isEqualTo("do deepseek");
+        assertThat(gemini.calls()).isZero();
+    }
+
+    private DefaultAIOrchestrator orchestratorWith(ProviderQuotaTracker tracker) {
+        return new DefaultAIOrchestrator(
+            new CostOptimizerRouter(List.of(gemini, deepseek), List.of("gemini", "deepseek"), 5, 30), tracker,
+            new RetryDecorator(1, Duration.ofMillis(1)),
+            new ValidationDecorator(),
+            cache,
+            new MetricsDecorator(new SimpleMeterRegistry(), tracker),
+            new GeminiEmbedder(embedServer.baseUrl(), "test-key", "gemini-embedding-2", 3, 100),
+            0.7, 2);
     }
 
     private static Supplier<CompletionResponse> ok(String json) {

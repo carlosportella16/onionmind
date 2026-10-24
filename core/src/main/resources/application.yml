@@ -128,6 +128,7 @@ ai:
   max-escalations: 2           # provider switches before giving up (returns best result, no throw)
   cache-ttl: 24h               # CacheDecorator, keyed by (text hash, task type) — not provider
   safety-margin-percent: 5     # keep this far below each cloud provider's published daily limit
+  interactive-reserve-percent: 30  # share of each provider's budget batch tasks may not use (ai-token-quota D4)
   max-input-chars: 8000        # page text sent to the LLM by the order 10-40 processors (fix-real-infra-findings D1)
   retry:
     max-retries: 2             # same-provider retries on a transient transport failure
@@ -139,12 +140,13 @@ ai:
   # One ladder for every task, cheapest first (replace-ollama-with-gemini-deepseek D3). Only
   # paid providers: .onion content must not reach a free tier that trains on it (2026-10-24).
   ladder: gemini,deepseek
-  # Request ceilings per provider id. A provider without an entry (deepseek) is never gated by
-  # quota — its prepaid balance is the spending cap, and a 402 parks it (D5).
+  # Request and token ceilings per provider id (ai-token-quota D5); a ceiling left out is not
+  # tracked. A provider without an entry (deepseek) is never gated by quota — its prepaid
+  # balance is the spending cap, and a 402 parks it (D5).
   providers:
-    # Placeholders for the paid tier: the real per-project numbers live in AI Studio
-    # (ai.google.dev rate-limits, 2026-10-15) — confirm before production.
-    gemini: { requests-per-minute: 1000, requests-per-day: 10000 }
+    # Placeholders for the paid tier: the real per-project numbers are only shown in AI Studio,
+    # not published (ai.google.dev rate-limits, updated 2026-10-15) — confirm before production.
+    gemini: { requests-per-minute: 1000, requests-per-day: 10000, tokens-per-minute: 1000000, tokens-per-day: 20000000 }
   gemini:
     base-url: https://generativelanguage.googleapis.com/v1beta
     model: gemini-2.5-flash-lite   # US$ 0.10 / 0.40 per 1M tokens, thinking off (D2)

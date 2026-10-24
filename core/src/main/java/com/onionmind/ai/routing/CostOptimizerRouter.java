@@ -19,6 +19,8 @@ import java.util.stream.Collectors;
  * D3): cheapest first, the last rung usually a provider with no configured limits (DeepSeek),
  * which only a park takes out. There is no local floor: with nothing usable the router throws a
  * quota-only {@link AllProvidersExhaustedException}, and the batch jobs wait for quota (D4).
+ * A provider is picked only if the request's estimated tokens fit its budget, and batch tasks
+ * keep {@code ai.interactive-reserve-percent} of it free for interactive ones (ai-token-quota D3/D4).
  */
 @Component
 @ConditionalOnProperty(prefix = "ai", name = "enabled", havingValue = "true")
@@ -27,13 +29,16 @@ public class CostOptimizerRouter {
     private final Map<String, AIProvider> byId;
     private final List<String> ladder;
     private final int marginPercent;
+    private final int interactiveReservePercent;
 
     public CostOptimizerRouter(List<AIProvider> providers,
                                @Value("${ai.ladder}") List<String> ladder,
-                               @Value("${ai.safety-margin-percent}") int marginPercent) {
+                               @Value("${ai.safety-margin-percent}") int marginPercent,
+                               @Value("${ai.interactive-reserve-percent:30}") int interactiveReservePercent) {
         this.byId = providers.stream().collect(Collectors.toMap(AIProvider::id, Function.identity()));
         this.ladder = ladder;
         this.marginPercent = marginPercent;
+        this.interactiveReservePercent = interactiveReservePercent;
     }
 
     /** The provider order for this task, before quota filtering: the configured ids that have a bean. */
@@ -42,13 +47,15 @@ public class CostOptimizerRouter {
     }
 
     /**
-     * The first provider in the ladder that still has quota and this task hasn't tried yet —
-     * a provider parked by a 429 on the previous attempt is skipped, not counted.
+     * The first provider in the ladder that still has quota for {@code estimatedTokens} and this
+     * task hasn't tried yet — a provider parked by a 429 on the previous attempt is skipped, not
+     * counted. Batch tasks read the quota with the interactive reserve added to the margin (D4).
      */
-    public AIProvider select(TaskContext ctx, Collection<String> tried) {
+    public AIProvider select(TaskContext ctx, Collection<String> tried, long estimatedTokens) {
+        int margin = ctx.interactive() ? marginPercent : marginPercent + interactiveReservePercent;
         return ladderFor(ctx).stream()
             .filter(p -> !tried.contains(p.id()))
-            .filter(p -> p.currentQuota().availableWithMargin(marginPercent))
+            .filter(p -> p.currentQuota().allows(margin, estimatedTokens))
             .findFirst()
             .orElseThrow(() -> new AllProvidersExhaustedException(
                 "no AI provider with quota left for " + ctx.type(), true, null));

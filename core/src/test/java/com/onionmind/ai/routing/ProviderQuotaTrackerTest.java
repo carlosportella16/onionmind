@@ -27,15 +27,15 @@ class ProviderQuotaTrackerTest {
     void setUp() {
         RedisTestSupport.flushAll();
         tracker = new ProviderQuotaTracker(redis, clock, Map.of(
-            "gemini", new ProviderLimits(100, 5)));
+            "gemini", new ProviderLimits(100, 5, 0, 0)));
     }
 
     @Test
     void recordUsageDecrementsRemaining() {
         assertThat(tracker.remaining("gemini").remaining()).isEqualTo(5); // per-minute is the binding limit
 
-        tracker.recordUsage("gemini");
-        tracker.recordUsage("gemini");
+        tracker.recordUsage("gemini", 0);
+        tracker.recordUsage("gemini", 0);
 
         assertThat(tracker.remaining("gemini").remaining()).isEqualTo(3);
     }
@@ -43,7 +43,7 @@ class ProviderQuotaTrackerTest {
     @Test
     void perMinuteCeilingTripsBeforeDaily() {
         for (int i = 0; i < 5; i++) {
-            tracker.recordUsage("gemini");
+            tracker.recordUsage("gemini", 0);
         }
         assertThat(tracker.remaining("gemini").remaining()).isZero();
         assertThat(tracker.remaining("gemini").availableWithMargin(5)).isFalse();
@@ -52,7 +52,7 @@ class ProviderQuotaTrackerTest {
     @Test
     void minuteCounterResetsOnMinuteRollover() {
         for (int i = 0; i < 5; i++) {
-            tracker.recordUsage("gemini");
+            tracker.recordUsage("gemini", 0);
         }
         assertThat(tracker.remaining("gemini").remaining()).isZero();
 
@@ -66,7 +66,7 @@ class ProviderQuotaTrackerTest {
     void dailyCounterResetsOnDayRollover() {
         for (int day = 0; day < 1; day++) {
             for (int i = 0; i < 5; i++) {
-                tracker.recordUsage("gemini");
+                tracker.recordUsage("gemini", 0);
             }
             clock.advance(Duration.ofMinutes(1));
         }
@@ -130,9 +130,53 @@ class ProviderQuotaTrackerTest {
     }
 
     @Test
+    void tokensAreSummedPerMinuteAndPerDay() {
+        ProviderQuotaTracker withTokens = new ProviderQuotaTracker(redis, clock, Map.of(
+            "gemini", new ProviderLimits(100, 50, 100_000, 8_000)));
+
+        withTokens.recordUsage("gemini", 2150);
+        withTokens.recordUsage("gemini", 850);
+
+        assertThat(withTokens.remaining("gemini").tokensRemaining()).isEqualTo(5_000); // 8000 - 3000, per-minute binds
+        assertThat(redis.opsForValue().get("quota:gemini:tokens:day:2026-08-30")).isEqualTo("3000");
+
+        clock.advance(Duration.ofMinutes(1));
+        assertThat(withTokens.remaining("gemini").tokensRemaining()).isEqualTo(8_000);
+        assertThat(redis.getExpire("quota:gemini:tokens:day:2026-08-30")).isPositive();
+    }
+
+    @Test
+    void requestOverTheMinuteTokenBudgetDoesNotFit() {
+        ProviderQuotaTracker withTokens = new ProviderQuotaTracker(redis, clock, Map.of(
+            "gemini", new ProviderLimits(100, 50, 100_000, 8_000)));
+        withTokens.recordUsage("gemini", 6_500); // 1500 left this minute
+
+        assertThat(withTokens.remaining("gemini").allows(0, 2_000)).isFalse();
+        assertThat(withTokens.remaining("gemini").allows(0, 1_000)).isTrue();
+    }
+
+    @Test
+    void tokenCeilingsLeftOutAreNotTracked() {
+        tracker.recordUsage("gemini", 1_000_000);
+
+        assertThat(tracker.remaining("gemini").tokenLimit()).isEqualTo(Long.MAX_VALUE);
+        assertThat(tracker.remaining("gemini").allows(5, 1_000_000)).isTrue();
+    }
+
+    @Test
+    void tokenLimitsBindFromConfiguration() {
+        ProviderQuotaTracker configured = new ProviderQuotaTracker(redis, new MockEnvironment()
+            .withProperty("ai.providers.gemini.requests-per-day", "100")
+            .withProperty("ai.providers.gemini.requests-per-minute", "5")
+            .withProperty("ai.providers.gemini.tokens-per-minute", "8000"), List.of("gemini"));
+
+        assertThat(configured.remaining("gemini").tokenLimit()).isEqualTo(8_000);
+    }
+
+    @Test
     void untrackedProviderIsUnlimited() {
         assertThat(tracker.remaining("deepseek").unlimited()).isTrue();
-        tracker.recordUsage("deepseek");   // no-op, must not throw
+        tracker.recordUsage("deepseek", 0);   // no-op, must not throw
     }
 
     static final class TestClock extends Clock {

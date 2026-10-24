@@ -25,8 +25,9 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Per-provider request accounting in Redis, tracked daily AND per minute — the per-minute
- * ceiling trips first under real concurrency (master-sdd sec. 6.3). Limits come from
+ * Per-provider request AND token accounting in Redis, tracked daily and per minute — the
+ * per-minute ceilings trip first under real concurrency (master-sdd sec. 6.3), and providers cut
+ * on tokens per minute long before requests (ai-token-quota). Limits come from
  * {@code ai.providers.<id>}; a provider without an entry is never gated by quota, only by
  * {@link #park}. Keys expire on their own; nothing to clean up.
  */
@@ -98,24 +99,40 @@ public class ProviderQuotaTracker {
         if (limit == null) {
             return ProviderQuota.UNLIMITED;
         }
-        long dayRemaining = limit.requestsPerDay() - read(dayKey(providerId));
-        long minuteRemaining = limit.requestsPerMinute() - read(minuteKey(providerId));
-        // Pair remaining with whichever limit is actually binding — margin-percent must be
-        // read against that same limit, or a tight per-minute cap (e.g. 30) never clears a
-        // margin computed off the much larger daily cap (e.g. 5% of 14400 = 720) and the
-        // cloud provider is silently excluded from the ladder forever, even at full quota.
-        return minuteRemaining <= dayRemaining
-            ? new ProviderQuota(Math.max(0, minuteRemaining), limit.requestsPerMinute())
-            : new ProviderQuota(Math.max(0, dayRemaining), limit.requestsPerDay());
+        long[] requests = binding(limit.requestsPerMinute(), read(minuteKey(providerId)),
+            limit.requestsPerDay(), read(dayKey(providerId)));
+        long[] tokens = binding(limit.tokensPerMinute(), read(tokenMinuteKey(providerId)),
+            limit.tokensPerDay(), read(tokenDayKey(providerId)));
+        return new ProviderQuota(requests[0], requests[1], tokens[0], tokens[1]);
     }
 
-    /** Call after every provider request that actually went out. */
-    public void recordUsage(String providerId) {
+    /**
+     * {remaining, limit} of whichever ceiling is actually binding — margin-percent must be read
+     * against that same limit, or a tight per-minute cap (e.g. 30) never clears a margin computed
+     * off the much larger daily cap (e.g. 5% of 14400 = 720) and the provider is silently
+     * excluded from the ladder forever, even at full quota. A 0 ceiling is not configured:
+     * unlimited on that side.
+     */
+    private static long[] binding(long minuteLimit, long minuteUsed, long dayLimit, long dayUsed) {
+        long minuteRemaining = minuteLimit > 0 ? minuteLimit - minuteUsed : Long.MAX_VALUE;
+        long dayRemaining = dayLimit > 0 ? dayLimit - dayUsed : Long.MAX_VALUE;
+        if (minuteRemaining == Long.MAX_VALUE && dayRemaining == Long.MAX_VALUE) {
+            return new long[] {Long.MAX_VALUE, Long.MAX_VALUE};
+        }
+        return minuteRemaining <= dayRemaining
+            ? new long[] {Math.max(0, minuteRemaining), minuteLimit}
+            : new long[] {Math.max(0, dayRemaining), dayLimit};
+    }
+
+    /** Call after every provider request that actually went out, with the tokens it used. */
+    public void recordUsage(String providerId, long tokens) {
         if (!limits.containsKey(providerId)) {
             return;
         }
-        bump(dayKey(providerId), DAY_TTL);
-        bump(minuteKey(providerId), MINUTE_TTL);
+        bump(dayKey(providerId), 1, DAY_TTL);
+        bump(minuteKey(providerId), 1, MINUTE_TTL);
+        bump(tokenDayKey(providerId), tokens, DAY_TTL);
+        bump(tokenMinuteKey(providerId), tokens, MINUTE_TTL);
     }
 
     /**
@@ -155,8 +172,8 @@ public class ProviderQuotaTracker {
         return Optional.ofNullable(redis.opsForValue().get(key)).map(Long::parseLong).orElse(0L);
     }
 
-    private void bump(String key, Duration ttl) {
-        redis.opsForValue().increment(key);
+    private void bump(String key, long delta, Duration ttl) {
+        redis.opsForValue().increment(key, delta);
         redis.expire(key, ttl);
     }
 
@@ -170,5 +187,13 @@ public class ProviderQuotaTracker {
 
     private String minuteKey(String providerId) {
         return "quota:%s:minute:%d".formatted(providerId, clock.instant().getEpochSecond() / 60);
+    }
+
+    private String tokenDayKey(String providerId) {
+        return "quota:%s:tokens:day:%s".formatted(providerId, LocalDate.now(clock));
+    }
+
+    private String tokenMinuteKey(String providerId) {
+        return "quota:%s:tokens:minute:%d".formatted(providerId, clock.instant().getEpochSecond() / 60);
     }
 }

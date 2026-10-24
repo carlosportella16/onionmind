@@ -35,6 +35,8 @@ import java.util.Set;
 public class DefaultAIOrchestrator implements AIOrchestrator {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultAIOrchestrator.class);
+    // Token estimate before the call and when the provider reports no usage (ai-token-quota D2).
+    private static final int CHARS_PER_TOKEN = 4;
 
     private final CostOptimizerRouter router;
     private final ProviderQuotaTracker quotaTracker;
@@ -153,11 +155,12 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
         TaskContext current = ctx;
         Set<String> tried = new HashSet<>();
         boolean quotaOnly = true; // until some provider actually answers or fails for another reason
+        long promptChars = length(request.systemPrompt()) + length(request.userPrompt());
 
         for (int attempt = 0; attempt <= maxEscalations; attempt++) {
             AIProvider provider;
             try {
-                provider = router.select(current.withAttempt(attempt), tried);
+                provider = router.select(current.withAttempt(attempt), tried, promptChars / CHARS_PER_TOKEN);
             } catch (AllProvidersExhaustedException e) {
                 break; // nothing left with quota: settle with what we have
             }
@@ -166,7 +169,8 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
             try {
                 CompletionResponse raw = metrics.timed(ctx.type(), provider.id(),
                     () -> retry.execute(() -> provider.complete(request)));
-                quotaTracker.recordUsage(provider.id());
+                quotaTracker.recordUsage(provider.id(), raw.totalTokens() != null
+                    ? raw.totalTokens() : (promptChars + length(raw.text())) / CHARS_PER_TOKEN);
                 validated = validator.validate(raw, ctx.type());
             } catch (ProviderException e) {
                 lastError = e;
@@ -199,5 +203,9 @@ public class DefaultAIOrchestrator implements AIOrchestrator {
         throw new AllProvidersExhaustedException(
             (quotaOnly ? "no AI provider with quota for " : "all providers failed for ") + ctx.type(),
             quotaOnly, lastError);
+    }
+
+    private static long length(String text) {
+        return text == null ? 0 : text.length();
     }
 }

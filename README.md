@@ -245,8 +245,8 @@ The file has ahmia's `/banned/` format: one hex MD5 per line, each the hash of t
 The repo ships only an empty placeholder (`crawler/denylist/banned-hosts.md5`, baked into the image). As with the core's URL denylist, the populated list stays **out of the repo** (never write it into `crawler/denylist/`). Generate it at deploy, review it, and mount it over the placeholder:
 
 ```bash
-# ahmia's /banned/ already serves the hashes; keep only well-formed lines.
-curl -s https://ahmia.fi/banned/ | grep -Eo '^[0-9a-f]{32}$' > /secure/banned-hosts.md5
+# ahmia's /banned/ already serves the hashes (it redirects, hence -L); keep only well-formed lines.
+curl -sL https://ahmia.fi/banned/ | grep -Eo '^[0-9a-f]{32}$' > /secure/banned-hosts.md5
 # To add a host of your own (Linux md5sum; on macOS use `md5 -q -s '<host>.onion'`):
 printf '%s' '<56 base32>.onion' | md5sum | cut -c1-32 >> /secure/banned-hosts.md5
 

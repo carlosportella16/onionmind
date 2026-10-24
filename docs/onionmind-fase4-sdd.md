@@ -161,11 +161,11 @@ Verificação por mutação: o filtro trivial, a guarda de versão do grafo, o c
 3. **O backfill de IA não tem limite de tentativas.** `AiEnrichmentBackfillJob` reprocessa `failed_transient` para sempre. Com o item 2, as 4 páginas grandes queimam chamadas reais de nuvem a cada execução. O `ChangeSummaryJob` já tem `max-attempts`, mas o backfill de páginas não. ✅ **Resolvido** em `fix-real-infra-findings`: `pages.ai_attempts` (V8) e `ai.backfill.max-attempts` (5) levam a página a `failed_permanent`; conteúdo novo zera a contagem.
 4. **O tracker de cota conta requisições, não tokens.** O Groq devolveu 429 por limite de tokens por minuto, com o contador local bem abaixo do limite de requisições. ✅ **Resolvido** em `ai-token-quota`: o tracker conta tokens por minuto e por dia (uso informado pelo provedor, ou caracteres/4), o roteador pula o provedor em que o prompt não cabe, e o batch deixa 30% do orçamento para o interativo. Os limites reais do Gemini pago ainda precisam ser lidos no AI Studio.
 5. **O Ollama em CPU disputa a VM com o Postgres.** Com o Ollama saturando a CPU, `ChangeSummaryJob` e o `EventResubmissionJob` do Modulith tiveram `statement timeout` (limite de 2 s) em consultas triviais. O próximo ciclo se recuperou sozinho. ✅ **Resolvido** em `replace-ollama-with-gemini-deepseek`: o Ollama saiu do compose e da escada. A geração vai para o Gemini 2.5 Flash-Lite (pago) e para o DeepSeek, e os embeddings para o `gemini-embedding-2`. Nada de IA roda mais na VM. A validação com chaves pagas (task 5.3 do change) ainda está pendente.
-6. **O crawler não segue a listagem do ahmia.** O crawl só indexou URLs do próprio ahmia, porque os `.onion` da listagem não viram links que o frontier segue. O corpus ficou restrito a páginas de serviço e institucionais. ✅ **Resolvido** em `crawler-follow-onion-listings`: a causa era que `ahmia.fi/onions/` lista 16.724 endereços v3 em texto puro, separados por `<br>` e sem `<a>`. O frontier passou a extrair endereços `.onion` v3 dos nós de texto, com teto `crawler.max_links_per_page` (2000), e o crawler descarta antes de enfileirar e antes do fetch todo host da denylist de MD5 no formato do `/banned/` do ahmia (`crawler.host_denylist_path`). A validação real do corpus (mais de 100 hosts distintos) continua pendente.
+6. **O crawler não segue a listagem do ahmia.** O crawl só indexou URLs do próprio ahmia, porque os `.onion` da listagem não viram links que o frontier segue. O corpus ficou restrito a páginas de serviço e institucionais. ✅ **Resolvido** em `crawler-follow-onion-listings`: a causa era que `ahmia.fi/onions/` lista 16.724 endereços v3 em texto puro, separados por `<br>` e sem `<a>`. O frontier passou a extrair endereços `.onion` v3 dos nós de texto, com teto `crawler.max_links_per_page` (2000), e o crawler descarta antes de enfileirar e antes do fetch todo host da denylist de MD5 no formato do `/banned/` do ahmia (`crawler.host_denylist_path`). Validado com Tor real em 2026-10-24 (seção 9.4): 548 hosts `.onion` distintos novos em 30 min.
 
 **Limite aceito.** As versões v1 eram anteriores à Fase 4 e não tinham snapshot de enriquecimento. Por isso o diff dessas mudanças traz só o delta de texto, sem delta de entidades nem troca de categoria (`category_from` nulo), como o design D7 prevê.
 
-Itens 1–3 eram segue-adiante (não bloqueavam o gate, que foi atingido) e foram resolvidos no change `fix-real-infra-findings` (`openspec/changes/archive/2026-10-24-fix-real-infra-findings/`). O Tor novo foi validado de verdade: bootstrap a 100% em ~15 s sem o aviso de protocolos, e o crawler publicou as duas seeds (`ahmia.fi` e a `.onion`). O ciclo real de backfill com as páginas de 1 a 2 MB foi rodado em 2026-10-24 (seção 9.2). Os itens 4 e 5 continuam em aberto. O item 6 foi resolvido em `crawler-follow-onion-listings`, mas ainda falta a validação real dele.
+Itens 1–3 eram segue-adiante (não bloqueavam o gate, que foi atingido) e foram resolvidos no change `fix-real-infra-findings` (`openspec/changes/archive/2026-10-24-fix-real-infra-findings/`). O Tor novo foi validado de verdade: bootstrap a 100% em ~15 s sem o aviso de protocolos, e o crawler publicou as duas seeds (`ahmia.fi` e a `.onion`). O ciclo real de backfill com as páginas de 1 a 2 MB foi rodado em 2026-10-24 (seção 9.2). Os itens 4 e 5 continuam em aberto. O item 6 foi resolvido em `crawler-follow-onion-listings` e validado com Tor real (seção 9.4).
 
 ### 9.2 Ciclo real dos fixes — 2026-10-24 (Tor real, Groq + Gemini reais, Ollama local; chaves de dev revogadas depois do teste)
 
@@ -193,3 +193,33 @@ Itens 1–3 eram segue-adiante (não bloqueavam o gate, que foi atingido) e fora
 10. **`gemini-2.5-flash-lite` não está mais disponível para contas novas.** A API devolveu HTTP 404 e indicou o `gemini-3.5-flash-lite`. O 404 conta como tentativa, e as 12 páginas chegaram a `failed_permanent` em 3 minutos. O comportamento está correto, porque é um erro real de configuração, mas exigiu reenfileirar as páginas. O padrão passou a ser `gemini-3.5-flash-lite` (US$ 0,30 / 2,50 por 1M tokens). No Gemini 3, `thinkingBudget: 0` é rejeitado com 400, e o piso é `thinkingLevel: minimal`, o que foi conferido com duas chamadas reais.
 11. **Indício de que a chave usada é de free tier.** Houve um 429 "You exceeded your current quota, please check your plan and billing details" com só 13 requisições e ~9 K tokens no minuto, o que é típico do limite gratuito. A decisão de privacidade (2026-10-24) exige um projeto **com billing** para conteúdo `.onion`. Antes de qualquer crawl real com IA ligada, é preciso confirmar o billing do projeto da chave e ler os limites reais no AI Studio, para substituir os placeholders de `ai.providers.gemini`.
 
+### 9.4 Crawl real seguindo a listagem do ahmia — 2026-10-24 (Tor real, IA desligada; `crawler-follow-onion-listings`)
+
+**Setup.** Compose do repo com o Tor construído localmente, banco de dev com 31 páginas de 20 hosts `.onion`, e core no host com `ai.enabled=false`, `embedding.enabled=false` e `graph.enabled=false`, sem nenhuma chave de IA no ambiente. Nenhum texto `.onion` foi enviado a provedor de IA: as 548 páginas novas ficaram com `ai_status` e `embedding_status` em `pending`. O crawler usou a imagem do repo, com `config.yaml` padrão (8 workers, timeout de 45 s, teto de 2000 links por página). A denylist veio do `/banned/` do ahmia (60.142 hashes, 0 linhas inválidas) e foi montada por cima do placeholder, fora do repo.
+
+**Resultado.** O crawl durou 30 min 25 s, e o crawler saiu com código 0 no SIGTERM.
+- **Publicação:** 571 URLs publicadas, todas distintas, e lag zero no consumer ao final.
+- **Corpus:** 548 páginas novas, de **548 hosts `.onion` distintos novos**. A meta era mais de 100. Hosts contados pelos dois últimos rótulos do hostname. A tabela `pages` foi de 31 páginas e 20 hosts para 579 páginas e 569 hosts.
+- **Descartes no core:** 9 páginas publicadas foram descartadas por não terem texto extraível ("no extractable text"). O guard não pôs nenhuma página em quarentena.
+- **Breadth-first:** quase toda página nova é a raiz de um host. Os 2000 endereços da listagem ocupam a frente da fila FIFO, e em 30 min os links de profundidade 2 quase não chegam a ser buscados. Isso está de acordo com o design (D2).
+
+**Denylist.** Hash MD5 do host normalizado de toda URL que aparece nos logs do crawler, publicada ou com falha. **0 dos 822 hosts buscados está na denylist.** O script de checagem pega um host quando o hash dele é posto na lista (controle positivo). A listagem do ahmia não tem nenhum host banido entre os seus 16.721 endereços, o que é coerente com a origem da lista. Por isso o filtro estava carregado mas não descartou nada neste crawl, e o worker não registrou nenhum "skipping banned host". O descarte de verdade segue coberto pelos testes do pool e do frontier.
+
+**Falhas de fetch: 251, o esperado para hosts `.onion` mortos.**
+
+| Causa | Quantidade |
+|-------|-----------:|
+| Timeout de 45 s | 126 |
+| `host unreachable` no SOCKS | 56 |
+| EOF | 25 |
+| Interrompidas pelo SIGTERM | 21 |
+| HTTP 4xx/5xx | 16 |
+| Certificado TLS próprio | 4 |
+| `general SOCKS server failure` | 3 |
+
+Nenhum erro de publicação, e nenhum WARN ou ERROR no core.
+
+**Achados.**
+
+12. **O circuit breaker do crawler era global, e não por host.** A spec `crawler/tor-discovery` diz "falhas consecutivas pro mesmo host", mas o `TorConnector` tinha um único `gobreaker` para todos os hosts. Na primeira tentativa, 4 hosts mortos seguidos da listagem abriram o circuito para todos. As outras URLs falharam na hora com "circuit breaker is open" (4.293 falhas) e saíram da fila. A fila esvaziou em ~1 min, com 21 publicações, e o crawler ficou parado o resto do tempo. Com a listagem, quase todo host vem em sequência e muitos estão mortos, por isso o efeito só apareceu agora. ✅ **Resolvido** neste change: um breaker por host, criado sob demanda (`TestFetch_OpenCircuitOnOneHostDoesNotBlockOthers`). No crawl validado não houve nenhuma falha por circuito aberto.
+13. **O `/banned/` do ahmia redireciona.** Ele devolve 301 para `/blacklist/banned/`, e o `curl -s` do README gerava um arquivo vazio, que o crawler aceita com `hosts=0`. ✅ **Resolvido:** o README passou a usar `curl -sL`.

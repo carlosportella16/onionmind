@@ -15,10 +15,7 @@ import (
 // newTestConnector builds a TorConnector that talks directly to the given
 // server, bypassing the real SOCKS5 dial (per task 6.3: mock the dialer).
 func newTestConnector(cbSettings gobreaker.Settings) *TorConnector {
-	return &TorConnector{
-		client:  &http.Client{Timeout: 5 * time.Second},
-		breaker: gobreaker.NewCircuitBreaker[[]byte](cbSettings),
-	}
+	return newTorConnector(&http.Client{Timeout: 5 * time.Second}, cbSettings)
 }
 
 func TestNewTorConnector_BuildsWithoutDialing(t *testing.T) {
@@ -113,5 +110,30 @@ func TestFetch_CircuitBreakerOpensAfterConsecutiveFailures(t *testing.T) {
 	if atomic.LoadInt32(&requests) != afterThreeFailures {
 		t.Errorf("expected no new network request once circuit is open, requests went from %d to %d",
 			afterThreeFailures, requests)
+	}
+}
+
+func TestFetch_OpenCircuitOnOneHostDoesNotBlockOthers(t *testing.T) {
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer dead.Close()
+	alive := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("ok"))
+	}))
+	defer alive.Close()
+
+	conn := newTestConnector(gobreaker.Settings{
+		Timeout:     time.Minute,
+		ReadyToTrip: func(c gobreaker.Counts) bool { return c.ConsecutiveFailures >= 3 },
+	})
+	for i := 0; i < 4; i++ {
+		conn.Fetch(context.Background(), dead.URL)
+	}
+	if _, err := conn.Fetch(context.Background(), dead.URL); err != gobreaker.ErrOpenState {
+		t.Fatalf("dead host: err = %v, want open circuit", err)
+	}
+	if _, err := conn.Fetch(context.Background(), alive.URL); err != nil {
+		t.Fatalf("healthy host blocked by another host's open circuit: %v", err)
 	}
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# End-to-end smoke for Fases 1-4: the real crawler image crawls fake .onion sites through a
+# End-to-end smoke for Fases 1-5: the real crawler image crawls fake .onion sites through a
 # fake Tor, the core indexes, embeds and enriches them (fake Gemini/DeepSeek, real Qdrant), and the
 # @e2e + @smoke Cucumber scenarios check it all through the core's API. Same command
 # locally and in CI (.github/workflows/e2e.yml). Needs Docker and a free port 8081.
@@ -40,7 +40,7 @@ for _ in $(seq 1 90); do
 done
 curl -sf "$SMOKE_BASE_URL/actuator/health" >/dev/null || { echo "core não ficou saudável em 180s"; exit 1; }
 
-echo "==> Cenários @e2e (Fases 1-4 ponta a ponta)..."
+echo "==> Cenários @e2e (Fases 1-5 ponta a ponta)..."
 SMOKE_TAGS='@e2e' "${GRADLE[@]}" smokeTest
 
 echo "==> Parando o crawler — tem que sair com código 0 (SIGTERM tratado)..."

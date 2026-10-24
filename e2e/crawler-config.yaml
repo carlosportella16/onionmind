@@ -8,6 +8,9 @@ crawler:
   circuit_breaker:
     consecutive_failures: 3
     timeout: 30s
+  max_links_per_page: 2000
+  # The empty placeholder baked into the crawler image (crawler/Dockerfile).
+  host_denylist_path: "denylist/banned-hosts.md5"
 
 tor:
   socks_addr: "fakes:1080"

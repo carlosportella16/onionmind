@@ -12,7 +12,7 @@ Este documento consolida todas as decisões de arquitetura discutidas até aqui 
 
 ## 1. Visão geral
 
-OnionMind descobre, coleta, indexa e analisa conteúdo de serviços `.onion`, transformando páginas não estruturadas em conhecimento pesquisável via IA. Stack: crawlers distribuídos em Go, monolito modular Java (Spring Boot + Spring Modulith), persistência poliglota (PostgreSQL, Qdrant, Neo4j, Redis), pipeline de IA multi-provider gratuito (Ollama, Groq, Gemini Flash).
+OnionMind descobre, coleta, indexa e analisa conteúdo de serviços `.onion`, transformando páginas não estruturadas em conhecimento pesquisável via IA. Stack: crawlers distribuídos em Go, monolito modular Java (Spring Boot + Spring Modulith), persistência poliglota (PostgreSQL, Qdrant, Neo4j, Redis), pipeline de IA multi-provider na nuvem, pago e com teto de gasto (Gemini 2.5 Flash-Lite e DeepSeek; embeddings com `gemini-embedding-2`). Até 2026-10-24 era gratuito, com Ollama, Groq e Gemini Flash (ver ADR-006).
 
 Projetado para construção incremental por uma pessoa ou dupla. Cada fase entrega um produto funcional e demonstrável — nenhuma fase existe por completude arquitetural.
 
@@ -69,6 +69,12 @@ Um pesquisador busca "criptomoedas" (Fase 1: full-text). Encontra páginas com t
 
 **Decisão:** interface `AIOrchestrator` própria (seção 6.2). Internamente, cadeia de decorators. Retry cobre falha transiente contra o mesmo provider; um loop de escalonamento separado troca de provider quando o problema é qualidade da resposta (confidence baixo, JSON inválido).
 
+**Provedores (revisão de 2026-10-24, change `replace-ollama-with-gemini-deepseek`):** o Ollama local saiu. Nas validações reais (`onionmind-fase4-sdd.md` 9.1, item 5, e 9.2, item 8) ele saturava a CPU da VM, ocupava ~6 GB de RAM e custava ~90 s por falha antes de a tarefa cair para a nuvem. O Groq também saiu.
+- **Geração:** `gemini-2.5-flash-lite` no tier pago, com thinking desligado e saída JSON. O último degrau é o `deepseek-flash`, num provider OpenAI-compatível genérico (`ai.openai-compatible.<id>`), sem gate de cota: o saldo pré-pago é o teto de gasto.
+- **Embeddings:** `gemini-embedding-2`, multilíngue, com 768 dimensões, em lote e numa coleção nova do Qdrant (`page_chunks_v2`).
+- **Privacidade:** decisão explícita do usuário. O conteúdo `.onion` pode ir para o Gemini **pago** e para o DeepSeek. O free tier do Gemini não é aprovado, porque usa o conteúdo para melhorar os produtos do Google.
+- **Falta de cota:** sem piso local, falta de cota é um estado. Os jobs em lote esperam sem gastar tentativas.
+
 ### ADR-007 — Monorepo, não um repositório por serviço
 
 **Contexto:** o ADR-001 já rejeitou a fricção de coordenação entre serviços — dividir repositório é uma separação ainda mais forte que dividir serviço, e pagaria esse custo de novo sem o benefício de deploy independente.
@@ -124,8 +130,8 @@ Event Publication Registry (Postgres) ── grava "publicado, pendente"
 |------|--------|-----------------|---------------|
 | **0** — Fundação | Repo, CI, docker-compose, schema inicial c/ versionamento e confidence, interfaces no-op | — | Infra sobe, testes de integração passam |
 | **1** — Crawler + Busca Textual (MVP real) | Go crawler (Tor, worker pool, circuit breaker, dedup), Redpanda, sanitização, Postgres full-text (`tsvector`/GIN), API REST, React SPA | Embeddings, Qdrant, Neo4j, qualquer LLM | Descobrir → indexar → buscar em minutos, repetível, sem intervenção manual |
-| **2** — Busca Semântica | `EmbeddingProcessor` (Ollama/Cloudflare), Qdrant, fusão simples full-text + vetorial | Geração de texto via LLM | Busca por conceito encontra o que full-text não encontrava |
-| **3** — IA Generativa + Cost Optimizer | `AIOrchestrator` real (Ollama/Groq/Gemini), Summarizer/Classifier processors (saída de IA em inglês), confidence score, filtro de conteúdo ilegal antes de qualquer LLM | Tradução de página (removida em `remove-page-translation`) | Página nova resumida/classificada em minutos, com descrição em inglês, sem estourar tier gratuito |
+| **2** — Busca Semântica | `EmbeddingProcessor` (Ollama na entrega; `gemini-embedding-2` desde 2026-10-24), Qdrant, fusão simples full-text + vetorial | Geração de texto via LLM | Busca por conceito encontra o que full-text não encontrava |
+| **3** — IA Generativa + Cost Optimizer | `AIOrchestrator` real (Ollama/Groq/Gemini na entrega; Gemini/DeepSeek desde 2026-10-24), Summarizer/Classifier processors (saída de IA em inglês), confidence score, filtro de conteúdo ilegal antes de qualquer LLM | Tradução de página (removida em `remove-page-translation`) | Página nova resumida/classificada em minutos, com descrição em inglês, sem estourar tier gratuito |
 | **4** — Knowledge Graph + Versionamento | `EntityProcessor`, Neo4j, diff via `content_hash` + LLM, `PageIndexedEvent` in-process (ADR-009) coordenando `graph`/`intelligence` | — | "O que mudou desde ontem" responde correto e curto |
 | **5** — RAG Completo + Agent Playground | Query rewriting, hybrid retrieval (RRF k=60), re-rank, Agent Playground (privado por usuário) | Marketplace público de agentes | Pipeline RAG funcional, extração de módulos avaliada com dados reais |
 | **6 / backlog** — Conectores externos | RSS, GitHub, PDF, S3 — cada um só mais um publisher no mesmo tópico Redpanda | Tudo — é backlog, não fase comprometida | — |
@@ -205,21 +211,30 @@ retorna ao processor
 
 ### 6.3 AI Cost Optimizer
 
-Regras simples na Fase 3, não ML:
+Regras simples, não ML. Desde 2026-10-24 (`replace-ollama-with-gemini-deepseek`) há uma escada só, configurável, para todas as tarefas. O tamanho do texto e o `critical` não mudam a ordem:
 
-- Texto curto (< 500 tokens), não crítico, **batch** → Ollama local primeiro
-- Texto longo/crítico, ou **interativo** (seção 9) → Groq primeiro, Gemini Flash como segundo
-- `confidence < 0.7` ou JSON inválido → próximo da escada
-- Ollama é sempre o fallback final — nunca estoura quota
+- `ai.ladder: gemini,deepseek`: o Gemini 2.5 Flash-Lite vem primeiro, e o DeepSeek é o último degrau;
+- o roteador pula o provider sem cota acima da margem, estacionado ou sem chave, e o que a tarefa já tentou;
+- `confidence < 0.7` ou JSON inválido leva ao próximo da escada;
+- o último degrau não tem limite configurado em `ai.providers`, então nunca é pulado por cota. Só o estacionamento o tira da escada;
+- sem nenhum provider utilizável, o roteador lança `AllProvidersExhaustedException` marcada como `quotaOnly`, e não há fallback local. O backfill de enriquecimento e o `ChangeSummaryJob` deixam o item na fila sem incrementar as tentativas e interrompem o lote.
+
+O interativo (seção 9) usa a mesma ordem. Ele só se diferencia pela margem de reserva de `ai-token-quota`.
 
 ```java
-List<AIProvider> ladderFor(TaskContext ctx) {
-    if (ctx.interactive()) return List.of(groq, gemini, ollama); // nuvem primeiro, sempre
-    return (ctx.approxTokens() < 500 && !ctx.critical())
-        ? List.of(ollama, groq, gemini)
-        : List.of(groq, gemini, ollama);
+AIProvider select(TaskContext ctx, Collection<String> tried) {
+    return ladderFor(ctx).stream()                       // ids de ai.ladder que existem como bean
+        .filter(p -> !tried.contains(p.id()))
+        .filter(p -> p.currentQuota().availableWithMargin(marginPercent))
+        .findFirst()
+        .orElseThrow(() -> new AllProvidersExhaustedException("...", true, null)); // quotaOnly
 }
 ```
+
+**Estacionamento** (`quota:<id>:parked`):
+- um 429 por minuto estaciona até a virada do minuto;
+- um 429 de cota diária do Gemini (`quotaId` com `PerDay`) estaciona até a meia-noite do Pacífico, quando o Google zera o RPD;
+- um 402 do DeepSeek (sem saldo) estaciona sem TTL, com log de aviso, até o reinício ou um `DEL` manual.
 
 **Quota tracker (Redis)** — diário E por minuto (o teto por minuto estoura primeiro sob concorrência real, não o diário):
 
@@ -395,7 +410,7 @@ var vectorFuture = CompletableFuture.supplyAsync(() -> qdrant.search(q), virtual
 
 `statement_timeout` de ~2s no datasource da API evita query patológica travando a request.
 
-`/api/chat` (Fase 5) tem geração de LLM real — segundos, não milissegundos, por natureza do problema. `TaskContext.interactive()` (seção 6.3) garante que a escada de providers vá pra nuvem primeiro; Ollama local nunca é a primeira escolha aqui, porque 20-30s de espera numa VM pequena é experiência ruim mesmo sendo grátis.
+`/api/chat` (Fase 5) tem geração de LLM real — segundos, não milissegundos, por natureza do problema. Desde 2026-10-24 todos os providers são de nuvem (seção 6.3), então não há mais modelo local lento a evitar no caminho interativo. `TaskContext.interactive()` marca a consulta: na busca semântica, ele escolhe o papel de consulta no embedding; em `ai-token-quota`, uma margem de reserva para o interativo.
 
 **Degradação visível em vez de espera indefinida** se toda a escada estourar:
 
@@ -465,17 +480,21 @@ Neo4j (Fase 4+): nós tipados (`:OnionService`, `:Person`, `:CryptoWallet`...), 
 
 ---
 
-## 12. Estratégia de LLM gratuito
+## 12. Estratégia de LLM
+
+Até 2026-10-24 a estratégia era gratuita (Ollama local, Groq e Gemini Flash free tier). Ela foi trocada por provedores pagos e baratos com teto de gasto em `replace-ollama-with-gemini-deepseek` (ver ADR-006).
 
 | Fase | Uso | Provedor |
 |------|-----|----------|
-| 1–2 | Embeddings apenas | Ollama local (`nomic-embed-text`) ou Cloudflare Workers AI |
-| 3 | Resumo/classificação em batch (saída em inglês) | Ollama → Groq → Gemini Flash (escada não-interativa) |
-| 5 | Chat interativo | Groq/Gemini Flash primeiro (escada interativa, seção 9); Ollama nunca é primeira opção aqui |
+| 1–2 | Embeddings | `gemini-embedding-2` (pago, 768 dimensões, em lote), na coleção `page_chunks_v2` |
+| 3 | Resumo/classificação em batch (saída em inglês) | `gemini-2.5-flash-lite` → `deepseek-flash` (`ai.ladder`) |
+| 5 | Chat interativo | a mesma escada, com a margem de reserva de `ai-token-quota` |
+
+O custo estimado (análise de 2026-10-24) fica em torno de US$ 6/mês de geração e US$ 6–12/mês de embeddings para 10 mil páginas por mês.
 
 ## 13. Hospedagem a custo zero
 
-Oracle Cloud Always Free (VM Ampere A1) roda tudo via `docker-compose`, incluindo Ollama. PostgreSQL na mesma VM inicialmente; Qdrant Cloud free tier (1GB/4GB) quando quiser separar; Neo4j AuraDB Free (200K nós/400K relações) na Fase 4; Cloudflare Pages pro frontend estático.
+Oracle Cloud Always Free (VM Ampere A1) roda tudo via `docker-compose`. Desde 2026-10-24 não há Ollama: a IA é paga, por uso, fora da VM (seção 12). PostgreSQL na mesma VM inicialmente; Qdrant Cloud free tier (1GB/4GB) quando quiser separar; Neo4j AuraDB Free (200K nós/400K relações) na Fase 4; Cloudflare Pages pro frontend estático.
 
 ---
 
@@ -518,7 +537,7 @@ Fase 1: logs estruturados JSON (Logback/`slog`) + health check — resolve a mai
 |-------|-----------|
 | `ContentProcessor` | Plugin de etapa do pipeline de processamento |
 | `AIOrchestrator` | Abstração sobre provedores de IA; processors nunca chamam Spring AI direto |
-| `AIProvider` | Interface por adapter (Ollama/Groq/Gemini) |
+| `AIProvider` | Interface por adapter de nuvem (Gemini, OpenAI-compatível/DeepSeek) |
 | `CostOptimizerRouter` | Escolhe provider por tamanho, quota restante, criticidade e se é interativo |
 | `SourceConnector` | Interface genérica de fonte de dados; `TorConnector` é a primeira implementação |
 | `TaskContext` | Sinais de roteamento passados ao `AIOrchestrator` |

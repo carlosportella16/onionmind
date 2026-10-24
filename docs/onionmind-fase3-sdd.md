@@ -5,6 +5,14 @@
 **Semanas estimadas:** 9–13 (referência `onionmind-sdd.md` seção 5).
 **Status:** código completo e testado na branch `feat/phase-3-llm-integration` (OpenSpec change `phase3-ai-generation`). DoD detalhada na seção 12; gate real ainda pendente (seção 11.4). Prontidão para a Fase 4 na seção 13.
 
+> **Nota de substituição (2026-10-24, `replace-ollama-with-gemini-deepseek`):** os três adapters desta fase (Ollama, Groq e Gemini Flash free tier) foram substituídos:
+> - geração: `GeminiProvider` com `gemini-2.5-flash-lite` (pago, `systemInstruction`, JSON, thinking desligado) e `OpenAiCompatibleProvider` para o DeepSeek (`deepseek-flash`), numa escada única `ai.ladder: gemini,deepseek`;
+> - embeddings: `gemini-embedding-2` no lugar do `nomic-embed-text`, com coleção nova `page_chunks_v2`;
+> - limites: `ai.providers.<id>`. O estacionamento por 429 (minuto ou dia) ou 402 fica em `quota:<id>:parked`;
+> - sem cota, o backfill espera sem gastar `ai_attempts`.
+>
+> As seções 7.2 e 7.4 e as validações reais de 2026-09-06 e 2026-10-24 ficam como registro histórico. O desenho atual está no README e em `onionmind-master-sdd.md` (ADR-006, seções 6.3 e 12). O `min-score` calibrado abaixo é do nomic e será recalibrado (task 5.3 do change).
+
 Documentos de referência (validados para esta fase):
 - `onionmind-sdd.md` — seções 5 (Fase 3), 7.2 (`AIOrchestrator`), 7.3 (Cost Optimizer), 7.4 (confidence), 8 (segurança Fase 3+), 9 (LLM gratuito), 14 (DoD Fase 3)
 - `onionmind-master-sdd.md` — seções 6.2, 6.3, 6.4, 6.5, 11, 12
@@ -280,6 +288,8 @@ public record Translation(String text, String detectedLanguage, double confidenc
 
 ### 7.2 `AIProvider` + adapters
 
+> Substituído em 2026-10-24 (`replace-ollama-with-gemini-deepseek`): ver a nota no topo deste documento.
+
 ```java
 public interface AIProvider {
     String id();                                  // "ollama" | "groq" | "gemini"
@@ -316,6 +326,8 @@ Processor chama orchestrator.summarize(text, ctx)
 `RetryDecorator` (rede/timeout, mesmo provider) e o loop de escalonamento (qualidade ruim, troca de provider) são **mecanismos distintos** — não misturar (SDD seção 7.2).
 
 ### 7.4 `CostOptimizerRouter` + `ProviderQuotaTracker`
+
+> Substituído em 2026-10-24 (`replace-ollama-with-gemini-deepseek`): a escada é única (`ai.ladder`), e não existem LOCAL_FIRST/CLOUD_FIRST nem o fallback para o Ollama. Ver a nota no topo deste documento.
 
 ```java
 List<AIProvider> ladderFor(TaskContext ctx) {

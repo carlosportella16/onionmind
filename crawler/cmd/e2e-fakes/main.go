@@ -21,6 +21,13 @@ var pages = map[string]string{
 <a href="http://linkada-e2e.onion/">linkada</a>
 <a href="http://conceito-e2e.onion/">conceito</a>
 <a href="http://proibido-e2e.onion/">proibido</a>
+<p>Sites listados em texto:<br>
+  http://7hfnguqyq4qq7snghuqy6gxtwerrqfijw3kqf22ilhydoq5r6eqexluf.onion/<br></p>
+</body></html>`,
+	// Reached only through the plain-text address above (no <a>), like ahmia's /onions/.
+	// Synthetic v3 host.
+	"7hfnguqyq4qq7snghuqy6gxtwerrqfijw3kqf22ilhydoq5r6eqexluf.onion": `<html><body>
+<p>Página achada só pelo endereço em texto, onde o ornitorrinco guarda o índice da rede.</p>
 </body></html>`,
 	"linkada-e2e.onion": `<html><body>
 <p>Página descoberta por link, que fala do quetzal e da comunidade que mantém o portal desde o início.</p>

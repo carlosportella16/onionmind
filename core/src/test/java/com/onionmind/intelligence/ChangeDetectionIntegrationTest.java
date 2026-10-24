@@ -2,6 +2,7 @@ package com.onionmind.intelligence;
 
 import com.onionmind.TestcontainersConfiguration;
 import com.onionmind.ai.AIOrchestrator;
+import com.onionmind.ai.AllProvidersExhaustedException;
 import com.onionmind.ai.Summary;
 import com.onionmind.content.EntityType;
 import com.onionmind.content.ExtractedEntity;
@@ -195,6 +196,25 @@ class ChangeDetectionIntegrationTest {
         assertThat(change("http://s.onion/")).containsEntry("status", "failed_permanent");
         job.run(); // no longer picked up
         verify(ai, org.mockito.Mockito.times(3)).summarize(anyString(), any());
+    }
+
+    @Test
+    void summaryJobWithoutQuotaKeepsAttemptsAndStopsTheBatch() {
+        long first = page("http://w1.onion/", 2, "Agora aceitamos Monero e entregamos em todo o país.");
+        version(first, 1, "Livros raros.", "marketplace", "[]");
+        listener.on(event(first, "http://w1.onion/", 2, "marketplace", WALLET));
+        long second = page("http://w2.onion/", 2, "Agora aceitamos Monero e entregamos em todo o país.");
+        version(second, 1, "Livros raros.", "marketplace", "[]");
+        listener.on(event(second, "http://w2.onion/", 2, "marketplace", WALLET));
+        AIOrchestrator ai = mock(AIOrchestrator.class);
+        when(ai.summarize(anyString(), any()))
+            .thenThrow(new AllProvidersExhaustedException("no AI provider with quota", true, null));
+
+        new ChangeSummaryJob(jdbc, ai, 10, 1).run();
+
+        assertThat(jdbc.queryForList("SELECT status || ':' || attempts FROM page_changes", String.class))
+            .containsOnly("pending:0"); // max-attempts 1: one counted failure would have been permanent
+        verify(ai, org.mockito.Mockito.times(1)).summarize(anyString(), any());
     }
 
     @Test

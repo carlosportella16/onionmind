@@ -72,6 +72,14 @@ class EntityProcessorTest {
     }
 
     @Test
+    void noProviderWithQuotaWaitsInsteadOfKeepingAPartialResult() {
+        when(orchestrator.extractEntities(anyString(), any()))
+            .thenThrow(new AllProvidersExhaustedException("no AI provider with quota", true, null));
+
+        assertThat(processor.process(doc("Pague em " + WALLET)).status()).isEqualTo(ProcessingResult.Status.WAITING);
+    }
+
+    @Test
     void sendsAtMostMaxInputCharsToTheLlmButPatternsSeeEverything() {
         when(orchestrator.extractEntities(anyString(), any())).thenReturn(new EntityExtraction(List.of(), 0.9));
         String text = "x".repeat(100) + " " + WALLET;

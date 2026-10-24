@@ -5,9 +5,11 @@ import com.onionmind.ai.FakeHttpServer.Reply;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 
 /**
@@ -40,8 +42,9 @@ final class FakeAiProviders implements AutoCloseable {
     /** What the fake model answers to a classification prompt; scenarios may override it. */
     volatile String categoryAnswer;
 
+    private final Map<FakeHttpServer, BiFunction<String, String, Reply>> answering = new HashMap<>();
+
     FakeAiProviders() {
-        reset();
         ollama.responder = (path, body) -> path.endsWith("/api/embed")
             ? json(Map.of("embeddings", List.of(toList(embed(field(body, "input"))))))
             : json(Map.of("response", answer(body, "ollama")));
@@ -49,11 +52,22 @@ final class FakeAiProviders implements AutoCloseable {
             List.of(Map.of("message", Map.of("content", answer(body, "deepseek"))))));
         gemini.responder = (path, body) -> json(Map.of("candidates",
             List.of(Map.of("content", Map.of("parts", List.of(Map.of("text", answer(body, "gemini"))))))));
+        for (FakeHttpServer s : List.of(ollama, deepseek, gemini)) {
+            answering.put(s, s.responder);
+        }
+        reset();
+    }
+
+    /** Back to answering normally after a scenario made the fake fail (e.g. HTTP 402). */
+    void restore(FakeHttpServer server) {
+        server.status = 200;
+        server.responder = answering.get(server);
     }
 
     void reset() {
         categoryAnswer = "forum";
         for (FakeHttpServer s : List.of(ollama, deepseek, gemini)) {
+            restore(s);
             s.requestBodies.clear();
             s.requestPaths.clear();
             s.authHeaders.clear();

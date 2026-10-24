@@ -40,6 +40,17 @@ Funcionalidade: Fase 3 — enriquecimento por IA
     E o provedor "gemini" não recebeu chamadas de geração
     E o provedor "deepseek" recebeu chamadas de geração
 
+  Cenário: Sem cota em nenhum provedor a página espera sem gastar tentativa
+    Dado que o provedor "gemini" está sem cota no minuto corrente
+    E que o provedor "deepseek" está sem saldo
+    E que a página "http://forum-pt.onion/" foi publicada com o texto "Este fórum em português discute a privacidade e a troca de bens digitais entre os usuários que não revelam a identidade para mais ninguém."
+    Quando o ciclo de enriquecimento roda
+    E o ciclo de enriquecimento roda
+    Então a página "http://forum-pt.onion/" continua aguardando IA sem tentativas gastas
+    Quando o saldo do provedor "deepseek" é liberado
+    E o ciclo de enriquecimento roda
+    Então a página "http://forum-pt.onion/" está com status de IA "processed"
+
   Cenário: Busca expõe o enriquecimento
     Dado que a página "http://forum-pt.onion/" foi publicada com o texto "Este fórum em português discute o xilofonista e a privacidade entre os usuários que não revelam a identidade para ninguém."
     E que o ciclo de enriquecimento rodou

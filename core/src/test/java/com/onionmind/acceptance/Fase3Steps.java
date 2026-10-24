@@ -2,6 +2,7 @@ package com.onionmind.acceptance;
 
 import io.cucumber.java.pt.Dado;
 import io.cucumber.java.pt.Então;
+import io.cucumber.java.pt.Quando;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -41,6 +42,26 @@ public class Fase3Steps {
         for (long m = minute; m <= minute + 1; m++) { // survive a minute boundary mid-scenario
             redis.opsForValue().set("quota:%s:minute:%d".formatted(provider, m), "1000000", Duration.ofSeconds(150));
         }
+    }
+
+    /** The fake answers HTTP 402, like DeepSeek with no prepaid balance left. */
+    @Dado("que o provedor {string} está sem saldo")
+    public void outOfBalance(String provider) {
+        server(provider).status = 402;
+        server(provider).responder = null;
+    }
+
+    /** What an operator does after topping up: the documented DEL of the park key. */
+    @Quando("o saldo do provedor {string} é liberado")
+    public void releaseBalance(String provider) {
+        fakes.restore(server(provider));
+        redis.delete("quota:%s:parked".formatted(provider));
+    }
+
+    @Então("a página {string} continua aguardando IA sem tentativas gastas")
+    public void assertWaitingWithoutAttempts(String url) {
+        Map<String, Object> row = jdbc.queryForMap("SELECT ai_status, ai_attempts FROM pages WHERE url = ?", url);
+        assertThat(row).containsEntry("ai_status", "pending").containsEntry("ai_attempts", 0);
     }
 
     @Então("a página {string} está com status de IA {string}")

@@ -24,7 +24,9 @@ import java.util.List;
  * Enriches pages that were indexed before generation was on, or whose last enrichment
  * failed (fase3-sdd 7.7). Re-runs the same order 10-50 processors as the live pipeline,
  * so the content_hash gate and the cost optimizer apply here too. A complete enrichment
- * publishes {@link PageEnrichedEvent} (Fase 4, ADR-009).
+ * publishes {@link PageEnrichedEvent} (Fase 4, ADR-009). A page that fails
+ * {@code ai.backfill.max-attempts} times goes {@code failed_permanent} and leaves the queue,
+ * like {@code ChangeSummaryJob} does for change summaries.
  */
 @Component
 @ConditionalOnProperty(prefix = "ai", name = "enabled", havingValue = "true")
@@ -38,13 +40,15 @@ public class AiEnrichmentBackfillJob {
     private final ApplicationEventPublisher events;
     private final TransactionTemplate tx;
     private final int batchSize;
+    private final int maxAttempts;
 
     public AiEnrichmentBackfillJob(JdbcTemplate jdbc,
                                    List<AiEnrichingProcessor> processors,
                                    PageRepository repository,
                                    ApplicationEventPublisher events,
                                    TransactionTemplate tx,
-                                   @Value("${ai.backfill.batch-size:20}") int batchSize) {
+                                   @Value("${ai.backfill.batch-size:20}") int batchSize,
+                                   @Value("${ai.backfill.max-attempts:5}") int maxAttempts) {
         this.jdbc = jdbc;
         this.processors = processors.stream()
             .sorted(Comparator.comparingInt(AiEnrichingProcessor::order))
@@ -53,19 +57,21 @@ public class AiEnrichmentBackfillJob {
         this.events = events;
         this.tx = tx;
         this.batchSize = batchSize;
+        this.maxAttempts = maxAttempts;
     }
 
     @Scheduled(fixedDelayString = "${ai.backfill.interval-ms:300000}")
     public void run() {
         List<PendingPage> pending = jdbc.query("""
-            SELECT id, url, source_type, extracted_text, content_hash, version
+            SELECT id, url, source_type, extracted_text, content_hash, version, ai_attempts
             FROM pages
             WHERE ai_status IN ('pending', 'failed_transient') AND extracted_text IS NOT NULL
             ORDER BY id
             LIMIT ?
             """, (rs, rowNum) -> new PendingPage(
                 rs.getLong("id"), rs.getString("url"), rs.getString("source_type"),
-                rs.getString("extracted_text"), rs.getString("content_hash"), rs.getInt("version")),
+                rs.getString("extracted_text"), rs.getString("content_hash"), rs.getInt("version"),
+                rs.getInt("ai_attempts")),
             batchSize);
 
         if (pending.isEmpty()) {
@@ -90,9 +96,15 @@ public class AiEnrichmentBackfillJob {
             doc = result.document();
         }
 
-        AiOutcome outcome = failed
-            ? AiOutcome.partialFailure(doc.enrichment())
-            : AiOutcome.processed(doc.enrichment());
+        AiOutcome outcome;
+        if (!failed) {
+            outcome = AiOutcome.processed(doc.enrichment());
+        } else if (page.aiAttempts() + 1 >= maxAttempts) {
+            log.warn("AI enrichment of {} failed {} time(s), giving up (failed_permanent)", page.url(), page.aiAttempts() + 1);
+            outcome = AiOutcome.permanentFailure(doc.enrichment());
+        } else {
+            outcome = AiOutcome.partialFailure(doc.enrichment());
+        }
         Enrichment enrichment = doc.enrichment();
 
         // Short transaction around the write only — the LLM calls above stay outside any
@@ -117,5 +129,5 @@ public class AiEnrichmentBackfillJob {
     }
 
     private record PendingPage(long id, String url, String sourceType, String extractedText,
-                               String contentHash, int version) {}
+                               String contentHash, int version, int aiAttempts) {}
 }

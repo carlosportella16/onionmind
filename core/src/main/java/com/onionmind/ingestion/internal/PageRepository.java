@@ -88,7 +88,10 @@ public class PageRepository {
             """, doc.url());
     }
 
-    /** Writes the enrichment (summary/category/language/translation/entities JSONB + ai_status). */
+    /**
+     * Writes the enrichment (summary/category/language/translation/entities JSONB + ai_status).
+     * Any status other than 'processed' counts one more failed attempt in {@code ai_attempts}.
+     */
     public void updateAiFields(String url, AiOutcome outcome) {
         update(url, null, outcome);
     }
@@ -108,11 +111,12 @@ public class PageRepository {
         return jdbc.update("""
             UPDATE pages
             SET summary = ?::jsonb, category = ?::jsonb, language = ?::jsonb, translated_text = ?::jsonb,
-                entities = ?::jsonb, ai_status = ?, ai_processed_at = now(), ai_error_message = ?
+                entities = ?::jsonb, ai_status = ?, ai_processed_at = now(), ai_error_message = ?,
+                ai_attempts = ai_attempts + CASE WHEN ?::text = 'processed' THEN 0 ELSE 1 END
             WHERE url = ? AND (?::text IS NULL OR content_hash = ?)
             """,
             summaryJson(e), categoryJson(e), languageJson(e), translationJson(e), entitiesJson(e),
-            outcome.status(), outcome.errorMessage(), url, contentHash, contentHash);
+            outcome.status(), outcome.errorMessage(), outcome.status(), url, contentHash, contentHash);
     }
 
     private String entitiesJson(Enrichment e) {
@@ -192,12 +196,13 @@ public class PageRepository {
         // back up (fix-ingestion-stability: AI/embedding no longer run inline here, so nothing
         // else would ever re-enrich changed content — they only scan for pending/failed rows).
         // Without this, a page whose content changes keeps its old, now-stale enrichment
-        // status forever.
+        // status forever. New content also gets a fresh ai_attempts budget, so even a
+        // 'failed_permanent' page is retried (fix-real-infra-findings D3).
         jdbc.update("""
             UPDATE pages
             SET extracted_text = ?, content_hash = ?, version = ?,
                 raw_html = ?, last_seen_at = now(),
-                ai_status = 'pending', embedding_status = 'pending'
+                ai_status = 'pending', ai_attempts = 0, embedding_status = 'pending'
             WHERE url = ?
             """, doc.extractedText(), hash, newVersion, doc.rawHtml(), doc.url());
     }

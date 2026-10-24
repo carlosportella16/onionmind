@@ -59,4 +59,13 @@ class SchemaIntegrationTest {
                 """, Integer.class);
         assertThat(uniqueIndexes).isEqualTo(2);
     }
+
+    @Test
+    void v8AddsAiAttemptsWithZeroDefault() {
+        var column = jdbcTemplate.queryForMap("""
+                SELECT is_nullable, column_default FROM information_schema.columns
+                WHERE table_name = 'pages' AND column_name = 'ai_attempts'
+                """);
+        assertThat(column).containsEntry("is_nullable", "NO").containsEntry("column_default", "0");
+    }
 }

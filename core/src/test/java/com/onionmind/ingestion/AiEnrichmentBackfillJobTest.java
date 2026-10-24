@@ -29,6 +29,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SpringBootTest
 class AiEnrichmentBackfillJobTest {
 
+    private static final int MAX_ATTEMPTS = 3;
+
     private static final ExtractedEntity WALLET =
         ExtractedEntity.of(EntityType.CRYPTO_WALLET, "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa", 1.0);
 
@@ -48,7 +50,7 @@ class AiEnrichmentBackfillJobTest {
     }
 
     private AiEnrichmentBackfillJob job(AiEnrichingProcessor processor, PageRepository repository) {
-        return new AiEnrichmentBackfillJob(jdbc, List.of(processor), repository, published::add, tx, 10);
+        return new AiEnrichmentBackfillJob(jdbc, List.of(processor), repository, published::add, tx, 10, MAX_ATTEMPTS);
     }
 
     private AiEnrichmentBackfillJob job(AiEnrichingProcessor processor) {
@@ -56,10 +58,14 @@ class AiEnrichmentBackfillJobTest {
     }
 
     private long insertPage(String url, String status) {
+        return insertPage(url, status, 0);
+    }
+
+    private long insertPage(String url, String status, int attempts) {
         jdbc.update("""
-            INSERT INTO pages (url, source_type, extracted_text, content_hash, version, ai_status)
-            VALUES (?, 'tor', 'some page body text', 'hash-1', 3, ?)
-            """, url, status);
+            INSERT INTO pages (url, source_type, extracted_text, content_hash, version, ai_status, ai_attempts)
+            VALUES (?, 'tor', 'some page body text', 'hash-1', 3, ?, ?)
+            """, url, status, attempts);
         return jdbc.queryForObject("SELECT id FROM pages WHERE url = ?", Long.class, url);
     }
 
@@ -99,6 +105,46 @@ class AiEnrichmentBackfillJobTest {
             "SELECT ai_status, entities->0->>'key' AS e FROM pages WHERE url = ?", "http://partial.onion");
         assertThat(row).containsEntry("ai_status", "failed_transient").containsEntry("e", WALLET.key());
         assertThat(published).isEmpty();
+    }
+
+    @Test
+    void failureBelowMaxAttemptsStaysTransient() {
+        insertPage("http://below.onion", "failed_transient", MAX_ATTEMPTS - 2);
+
+        job(new FakeEnricher(true)).run();
+
+        assertThat(jdbc.queryForMap("SELECT ai_status, ai_attempts FROM pages WHERE url = ?", "http://below.onion"))
+            .containsEntry("ai_status", "failed_transient").containsEntry("ai_attempts", MAX_ATTEMPTS - 1);
+    }
+
+    @Test
+    void failureAtMaxAttemptsGoesPermanentAndLeavesTheQueue() {
+        insertPage("http://hopeless.onion", "failed_transient", MAX_ATTEMPTS - 1);
+        FakeEnricher enricher = new FakeEnricher(true);
+
+        job(enricher).run();
+
+        var row = jdbc.queryForMap(
+            "SELECT ai_status, ai_attempts, ai_error_message, entities->0->>'key' AS e FROM pages WHERE url = ?",
+            "http://hopeless.onion");
+        assertThat(row).containsEntry("ai_status", "failed_permanent").containsEntry("ai_attempts", MAX_ATTEMPTS)
+            .containsEntry("e", WALLET.key()); // keeps what the steps produced
+        assertThat((String) row.get("ai_error_message")).contains("max attempts");
+        assertThat(published).isEmpty();
+
+        job(enricher).run();
+        assertThat(enricher.calls).isEqualTo(1); // not selected again
+    }
+
+    @Test
+    void successAfterPreviousFailuresIsProcessedAndPublished() {
+        insertPage("http://recovered.onion", "failed_transient", MAX_ATTEMPTS - 1);
+
+        job(new FakeEnricher(false)).run();
+
+        assertThat(jdbc.queryForObject("SELECT ai_status FROM pages WHERE url = ?", String.class,
+            "http://recovered.onion")).isEqualTo("processed");
+        assertThat(published).hasSize(1);
     }
 
     @Test
@@ -148,6 +194,7 @@ class AiEnrichmentBackfillJobTest {
 
     private static class FakeEnricher implements AiEnrichingProcessor {
         private final boolean namedEntitiesFail;
+        int calls;
 
         FakeEnricher(boolean namedEntitiesFail) {
             this.namedEntitiesFail = namedEntitiesFail;
@@ -155,6 +202,7 @@ class AiEnrichmentBackfillJobTest {
 
         @Override
         public ProcessingResult process(Document document) {
+            calls++;
             Document enriched = document.withEnrichment(document.enrichment()
                 .withSummary(new Summary("resumo backfill", 0.9))
                 .withCategory(new Classification("forum", 0.8))

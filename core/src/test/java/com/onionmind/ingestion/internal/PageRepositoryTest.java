@@ -97,6 +97,45 @@ class PageRepositoryTest {
         assertThat(row).containsEntry("ai_status", "pending").containsEntry("embedding_status", "pending");
     }
 
+    private java.util.Map<String, Object> aiStateOf(String url) {
+        return jdbc.queryForMap("SELECT ai_status, ai_attempts FROM pages WHERE url = ?", url);
+    }
+
+    @Test
+    void failedEnrichmentCountsAnAttemptAndSuccessDoesNot() {
+        String url = "http://attempts-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "some content"));
+
+        repository.updateAiFields(url, AiOutcome.partialFailure(Enrichment.EMPTY));
+        repository.updateAiFields(url, AiOutcome.partialFailure(Enrichment.EMPTY));
+        assertThat(aiStateOf(url)).containsEntry("ai_status", "failed_transient").containsEntry("ai_attempts", 2);
+
+        repository.updateAiFields(url, AiOutcome.processed(Enrichment.EMPTY));
+        assertThat(aiStateOf(url)).containsEntry("ai_status", "processed").containsEntry("ai_attempts", 2);
+    }
+
+    @Test
+    void permanentFailureWithNewContentGoesBackToPendingWithZeroAttempts() {
+        String url = "http://permanent-new-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "version one content"));
+        repository.updateAiFields(url, AiOutcome.permanentFailure(Enrichment.EMPTY));
+
+        repository.upsertWithVersioning(doc(url, "version two, different content"));
+
+        assertThat(aiStateOf(url)).containsEntry("ai_status", "pending").containsEntry("ai_attempts", 0);
+    }
+
+    @Test
+    void permanentFailureWithSameContentStaysPermanent() {
+        String url = "http://permanent-same-" + System.nanoTime() + ".onion";
+        repository.upsertWithVersioning(doc(url, "unchanged content"));
+        repository.updateAiFields(url, AiOutcome.permanentFailure(Enrichment.EMPTY));
+
+        repository.upsertWithVersioning(doc(url, "unchanged content"));
+
+        assertThat(aiStateOf(url)).containsEntry("ai_status", "failed_permanent").containsEntry("ai_attempts", 1);
+    }
+
     @Test
     void oversizedExtractedTextStillInsertsWithoutFailing() {
         // fix-large-page-backfill-limits: text past Postgres's ~1MB tsvector limit used to

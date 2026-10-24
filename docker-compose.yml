@@ -71,36 +71,8 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-  ollama:
-    image: ollama/ollama:latest
-    ports: ["11434:11434"]
-    volumes:
-      - ollama_data:/root/.ollama
-    healthcheck:
-      test: ["CMD-SHELL", "ollama list || exit 1"]
-      interval: 10s
-      retries: 10
-      start_period: 30s
-
-  ollama-pull:
-    image: ollama/ollama:latest
-    depends_on:
-      ollama:
-        condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["OLLAMA_HOST=ollama:11434 ollama pull nomic-embed-text"]
-    restart: "no"
-
-  # Phase 3: generative model for summarize/classify/translate. nomic-embed-text
-  # (pulled above) only does embeddings.
-  ollama-pull-generate:
-    image: ollama/ollama:latest
-    depends_on:
-      ollama:
-        condition: service_healthy
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["OLLAMA_HOST=ollama:11434 ollama pull llama3.1:8b"]
-    restart: "no"
+  # No local AI: generation and embeddings come from Gemini (paid) and DeepSeek
+  # (replace-ollama-with-gemini-deepseek) — set GEMINI_API_KEY / DEEPSEEK_API_KEY for the core.
 
   qdrant:
     image: qdrant/qdrant:v1.11.0
@@ -130,6 +102,5 @@ services:
 
 volumes:
   pg_data:
-  ollama_data:
   qdrant_data:
   neo4j_data:

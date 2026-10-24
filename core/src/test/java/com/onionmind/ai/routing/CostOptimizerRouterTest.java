@@ -58,7 +58,7 @@ class CostOptimizerRouterTest {
             .isInstanceOfSatisfying(AllProvidersExhaustedException.class, e -> assertThat(e.quotaOnly()).isTrue());
     }
 
-    /** Used to NPE: the old router fell back to byId.get("ollama"), which no longer exists. */
+    /** Used to NPE: the old router fell back to a hardcoded local-provider bean that no longer exists. */
     @Test
     void ladderIdWithoutABeanOrAnEmptyLadderThrowsInsteadOfNpe() {
         CostOptimizerRouter missingBean = new CostOptimizerRouter(

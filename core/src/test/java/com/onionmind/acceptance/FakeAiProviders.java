@@ -69,27 +69,29 @@ final class FakeAiProviders implements AutoCloseable {
     static final Map<String, String> KNOWN_ENTITIES = Map.of(
         "Ana Souza", "person", "Mercado Sombrio", "organization");
 
-    /** Task type is recognised from the orchestrator's fixed system prompts (ASCII parts only). */
+    /** Task type is recognised from the fixed marker each orchestrator prompt opens with. */
     private String answer(String requestBody, String provider) {
         Map<String, Object> payload;
-        if (requestBody.contains("Extraia do texto as entidades")) {
+        if (requestBody.contains("Extract the named entities")) {
             String text = requestBody;
             payload = Map.of("entities", KNOWN_ENTITIES.entrySet().stream()
                 .filter(e -> text.contains(e.getKey()))
                 .sorted(Map.Entry.comparingByKey())
                 .map(e -> Map.of("type", e.getValue(), "value", e.getKey(), "confidence", 0.9))
                 .toList(), "confidence", 0.9);
-        } else if (requestBody.contains("Classifique")) {
+        } else if (requestBody.contains("Classify the page")) {
             // Marketplaces are recognisable by name, so Fase 4 can mix categories in one scenario.
             payload = Map.of("category", requestBody.contains("Mercado") ? "marketplace" : categoryAnswer,
                 "confidence", 0.9);
-        } else if (requestBody.contains("Traduza")) {
-            payload = Map.of("translation", "Tradução automática (" + provider + ") para português.",
+        } else if (requestBody.contains("Translate the text")) {
+            payload = Map.of("translation", "Automatic translation (" + provider + ").",
                 "detectedLanguage", "en", "confidence", 0.9);
-        } else if (requestBody.contains("Identifique o idioma")) {
-            payload = Map.of("language", requestBody.contains(" the ") ? "en" : "pt", "confidence", 0.9);
+        } else if (requestBody.contains("Identify the predominant language")) {
+            // The prompt is English too: drop its marker so " the " can only come from the page.
+            String page = requestBody.replace("Identify the predominant language", "");
+            payload = Map.of("language", page.contains(" the ") ? "en" : "pt", "confidence", 0.9);
         } else {
-            payload = Map.of("summary", "Resumo automático (" + provider + ") da página.", "confidence", 0.9);
+            payload = Map.of("summary", "Automatic summary (" + provider + ") of the page.", "confidence", 0.9);
         }
         return mapper.writeValueAsString(payload);
     }

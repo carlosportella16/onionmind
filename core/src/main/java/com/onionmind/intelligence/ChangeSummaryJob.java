@@ -67,7 +67,7 @@ public class ChangeSummaryJob {
         String text = describe(change);
         try {
             Summary summary = orchestrator.summarize(text,
-                TaskContext.batch(TaskContext.TaskType.SUMMARIZE, text.length() / 4, "pt", false));
+                TaskContext.batch(TaskContext.TaskType.SUMMARIZE, text.length() / 4, "en", false));
             jdbc.update("UPDATE page_changes SET status = 'summarized', summary = ?::jsonb, attempts = attempts + 1 WHERE id = ?",
                 mapper.writeValueAsString(Map.of("text", summary.text(), "confidence", summary.confidence())),
                 change.id());
@@ -81,15 +81,15 @@ public class ChangeSummaryJob {
     /** What the summarizer reads: a structured description of the diff, not the page. */
     String describe(PendingChange c) {
         StringBuilder sb = new StringBuilder()
-            .append("Resuma em 1 a 3 frases o que mudou nesta página entre a versão ")
-            .append(c.fromVersion()).append(" e a ").append(c.toVersion()).append(" (").append(c.url()).append(").\n");
+            .append("Summarize in 1 to 3 sentences what changed on this page between version ")
+            .append(c.fromVersion()).append(" and ").append(c.toVersion()).append(" (").append(c.url()).append(").\n");
         if (c.categoryFrom() != null && !c.categoryFrom().equals(c.categoryTo())) {
-            sb.append("Categoria: de ").append(c.categoryFrom()).append(" para ").append(c.categoryTo()).append(".\n");
+            sb.append("Category: from ").append(c.categoryFrom()).append(" to ").append(c.categoryTo()).append(".\n");
         }
-        appendEntities(sb, "Entidades novas", c.entitiesAdded());
-        appendEntities(sb, "Entidades que sumiram", c.entitiesRemoved());
-        appendText(sb, "Trechos adicionados", c.addedText());
-        appendText(sb, "Trechos removidos", c.removedText());
+        appendEntities(sb, "New entities", c.entitiesAdded());
+        appendEntities(sb, "Removed entities", c.entitiesRemoved());
+        appendText(sb, "Added text", c.addedText());
+        appendText(sb, "Removed text", c.removedText());
         return sb.toString();
     }
 

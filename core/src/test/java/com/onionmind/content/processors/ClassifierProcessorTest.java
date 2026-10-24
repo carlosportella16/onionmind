@@ -14,6 +14,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -54,6 +56,18 @@ class ClassifierProcessorTest {
         assertThat(result.status()).isEqualTo(ProcessingResult.Status.SUCCESS);
         assertThat(result.document().enrichment().category().category()).isEqualTo("other");
         assertThat(result.document().enrichment().category().confidence()).isLessThanOrEqualTo(0.5);
+    }
+
+    @Test
+    void asksInEnglishWithTheAllowedCategoriesAndTheUntouchedText() {
+        when(orchestrator.classify(any(), any())).thenReturn(new Classification("forum", 0.8));
+
+        processor.process(doc());
+
+        verify(orchestrator).classify(
+            argThat(t -> t.startsWith("Allowed categories (answer with exactly one, in lowercase): blog, forum,")
+                && t.endsWith("a page selling things")),
+            argThat(ctx -> "en".equals(ctx.sourceLanguage())));
     }
 
     @Test

@@ -174,6 +174,35 @@ class DefaultAIOrchestratorTest {
             .isInstanceOf(AllProvidersExhaustedException.class);
     }
 
+    /** The test fakes (FakeAiProviders, e2e ollama.go) pick their answer by these markers. */
+    @Test
+    void everyPromptIsEnglishAndOpensWithItsFixedMarker() {
+        Map<String, String> markers = Map.of(
+            DefaultAIOrchestrator.SUMMARIZE_PROMPT, "You summarize web pages",
+            DefaultAIOrchestrator.CLASSIFY_PROMPT, "Classify the page",
+            DefaultAIOrchestrator.DETECT_LANGUAGE_PROMPT, "Identify the predominant language",
+            DefaultAIOrchestrator.EXTRACT_ENTITIES_PROMPT, "Extract the named entities",
+            DefaultAIOrchestrator.TRANSLATE_PROMPT.formatted("en"), "Translate the text");
+
+        markers.forEach((prompt, marker) -> assertThat(prompt).startsWith(marker)
+            .contains("Respond", "ONLY with JSON")
+            .doesNotContain("Responda", "SOMENTE", "Você", "Classifique", "Traduza", "Identifique", "Extraia"));
+        markers.keySet().stream().filter(p -> !p.startsWith("Translate"))
+            .forEach(p -> assertThat(p).contains("Respond in English"));
+    }
+
+    @Test
+    void sendsTheEnglishPromptAndTheUntouchedPageText() {
+        ollama.script(ok("{\"summary\":\"A summary.\",\"confidence\":0.9}"));
+
+        orchestrator.summarize(TEXT, shortCtx());
+
+        assertThat(ollama.requests).singleElement().satisfies(r -> {
+            assertThat(r.systemPrompt()).isEqualTo(DefaultAIOrchestrator.SUMMARIZE_PROMPT);
+            assertThat(r.userPrompt()).isEqualTo(TEXT);
+        });
+    }
+
     private static Supplier<CompletionResponse> ok(String json) {
         return () -> new CompletionResponse(json);
     }
@@ -187,6 +216,7 @@ class DefaultAIOrchestratorTest {
     static final class ScriptedProvider implements AIProvider {
         private final String id;
         private final AtomicInteger calls = new AtomicInteger();
+        final List<CompletionRequest> requests = new java.util.ArrayList<>();
         private Supplier<CompletionResponse> step = () -> new CompletionResponse("{}");
 
         ScriptedProvider(String id) {
@@ -209,6 +239,7 @@ class DefaultAIOrchestratorTest {
         @Override
         public CompletionResponse complete(CompletionRequest request) {
             calls.incrementAndGet();
+            requests.add(request);
             return step.get();
         }
 

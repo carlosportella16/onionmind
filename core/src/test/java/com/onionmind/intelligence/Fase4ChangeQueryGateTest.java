@@ -79,7 +79,7 @@ class Fase4ChangeQueryGateTest extends Fase4IntegrationTestBase {
             assertThat(c.url()).isEqualTo(forum);
             assertThat(c.fromVersion()).isEqualTo(1);
             assertThat(c.toVersion()).isEqualTo(2);
-            assertThat(c.summary().text()).isEqualTo("Mudança: Novo tópico: guia completo de carteiras Monero para iniciantes.");
+            assertThat(c.summary().text()).isEqualTo("Change: Novo tópico: guia completo de carteiras Monero para iniciantes.");
         });
         var marketplace = changes.changes(null, "marketplace", 20).getBody();
         assertThat(marketplace.changes()).singleElement().satisfies(c ->

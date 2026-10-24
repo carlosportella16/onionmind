@@ -62,20 +62,20 @@ func conceptAxis(word string) int {
 	return -1
 }
 
-// answer recognises the core's task from DefaultAIOrchestrator's fixed system prompts.
+// answer recognises the core's task from the fixed marker each DefaultAIOrchestrator prompt opens with.
 func answer(prompt string) map[string]any {
 	switch {
-	case strings.Contains(prompt, "Extraia do texto as entidades"):
+	case strings.Contains(prompt, "Extract the named entities"):
 		// Named entities only; the e2e wallet/onion address come from the core's own patterns.
 		return map[string]any{"entities": []any{}, "confidence": 0.9}
-	case strings.Contains(prompt, "Classifique"):
+	case strings.Contains(prompt, "Classify the page"):
 		return map[string]any{"category": "forum", "confidence": 0.9}
-	case strings.Contains(prompt, "Traduza"):
-		return map[string]any{"translation": "Tradução automática para português.", "detectedLanguage": "en", "confidence": 0.9}
-	case strings.Contains(prompt, "Identifique o idioma"):
+	case strings.Contains(prompt, "Translate the text"):
+		return map[string]any{"translation": "Automatic translation.", "detectedLanguage": "en", "confidence": 0.9}
+	case strings.Contains(prompt, "Identify the predominant language"):
 		return map[string]any{"language": "pt", "confidence": 0.9}
 	default:
-		return map[string]any{"summary": "Resumo automático da página.", "confidence": 0.9}
+		return map[string]any{"summary": "Automatic summary of the page.", "confidence": 0.9}
 	}
 }
 

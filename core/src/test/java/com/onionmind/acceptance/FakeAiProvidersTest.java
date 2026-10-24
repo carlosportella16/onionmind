@@ -43,7 +43,7 @@ class FakeAiProvidersTest {
     void entityPromptReturnsOnlyTheKnownNamesPresentInTheText() throws Exception {
         try (FakeAiProviders fakes = new FakeAiProviders()) {
             var reply = fakes.ollama.responder.apply("/api/generate",
-                "{\"prompt\": \"Extraia do texto as entidades nomeadas... Fale com Ana Souza hoje.\"}");
+                "{\"prompt\": \"Extract the named entities... Fale com Ana Souza hoje.\"}");
 
             assertThat(reply.body()).contains("Ana Souza", "person").doesNotContain("Mercado Sombrio");
         }
@@ -52,10 +52,25 @@ class FakeAiProvidersTest {
     @Test
     void marketplacesAreClassifiedByName() throws Exception {
         try (FakeAiProviders fakes = new FakeAiProviders()) {
-            assertThat(fakes.ollama.responder.apply("/api/generate", "{\"prompt\": \"Classifique: Mercado X\"}").body())
+            assertThat(fakes.ollama.responder.apply("/api/generate", "{\"prompt\": \"Classify the page: Mercado X\"}").body())
                 .contains("marketplace");
-            assertThat(fakes.ollama.responder.apply("/api/generate", "{\"prompt\": \"Classifique: um blog\"}").body())
+            assertThat(fakes.ollama.responder.apply("/api/generate", "{\"prompt\": \"Classify the page: um blog\"}").body())
                 .contains("forum");
+        }
+    }
+
+    @Test
+    void englishPromptsGetEnglishSummariesAndDoNotSkewLanguageDetection() throws Exception {
+        try (FakeAiProviders fakes = new FakeAiProviders()) {
+            assertThat(fakes.ollama.responder.apply("/api/generate",
+                "{\"system\": \"Identify the predominant language of this text.\", \"prompt\": \"um texto curto\"}")
+                .body()).contains("\\\"pt\\\"");
+            assertThat(fakes.ollama.responder.apply("/api/generate",
+                "{\"system\": \"Identify the predominant language of this text.\", \"prompt\": \"on the network\"}")
+                .body()).contains("\\\"en\\\"");
+            assertThat(fakes.ollama.responder.apply("/api/generate",
+                "{\"system\": \"You summarize web pages in English.\", \"prompt\": \"texto\"}").body())
+                .contains("Automatic summary (ollama) of the page.");
         }
     }
 }

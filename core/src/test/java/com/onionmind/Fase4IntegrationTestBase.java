@@ -71,12 +71,12 @@ public abstract class Fase4IntegrationTestBase {
             return new AIOrchestrator() {
                 @Override
                 public Summary summarize(String text, TaskContext ctx) {
-                    if (text.startsWith("Resuma em 1 a 3 frases o que mudou")) {
-                        int at = text.indexOf("Trechos adicionados:\n");
-                        String added = at < 0 ? "nada novo" : text.substring(at + 21).lines().findFirst().orElse("");
-                        return new Summary("Mudança: " + added, 0.9);
+                    if (text.startsWith("Summarize in 1 to 3 sentences what changed")) {
+                        int at = text.indexOf("Added text:\n");
+                        String added = at < 0 ? "nothing new" : text.substring(at + 12).lines().findFirst().orElse("");
+                        return new Summary("Change: " + added, 0.9);
                     }
-                    return new Summary("resumo da página", 0.9);
+                    return new Summary("Summary of the page.", 0.9);
                 }
 
                 @Override

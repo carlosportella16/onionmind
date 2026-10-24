@@ -31,7 +31,7 @@ public class SummarizerProcessor extends AbstractAiProcessor {
             : text;
 
         Summary summary = orchestrator.summarize(source,
-            TaskContext.batch(TaskContext.TaskType.SUMMARIZE, approxTokens(source), "pt", false));
+            TaskContext.batch(TaskContext.TaskType.SUMMARIZE, approxTokens(source), "en", false));
         return document.withEnrichment(document.enrichment().withSummary(summary));
     }
 

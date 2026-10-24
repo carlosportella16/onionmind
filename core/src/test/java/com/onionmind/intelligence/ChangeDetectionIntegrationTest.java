@@ -176,7 +176,7 @@ class ChangeDetectionIntegrationTest {
         AIOrchestrator ai = mock(AIOrchestrator.class);
         when(ai.summarize(anyString(), any()))
             .thenThrow(new RuntimeException("providers down"))
-            .thenReturn(new Summary("O mercado passou a aceitar Monero.", 0.88));
+            .thenReturn(new Summary("The marketplace now accepts Monero.", 0.88));
         ChangeSummaryJob job = new ChangeSummaryJob(jdbc, ai, 10, 3);
 
         job.run();
@@ -185,7 +185,9 @@ class ChangeDetectionIntegrationTest {
 
         var row = jdbc.queryForMap("SELECT status, attempts, summary->>'text' AS s FROM page_changes");
         assertThat(row).containsEntry("status", "summarized").containsEntry("attempts", 2)
-            .containsEntry("s", "O mercado passou a aceitar Monero.");
+            .containsEntry("s", "The marketplace now accepts Monero.");
+        verify(ai, org.mockito.Mockito.atLeastOnce()).summarize(anyString(),
+            org.mockito.ArgumentMatchers.argThat(ctx -> "en".equals(ctx.sourceLanguage())));
 
         jdbc.update("UPDATE page_changes SET status = 'pending', attempts = 2");
         when(ai.summarize(anyString(), any())).thenThrow(new RuntimeException("still down"));
@@ -202,8 +204,10 @@ class ChangeDetectionIntegrationTest {
             "Agora aceitamos Monero.", "", "[{\"type\":\"crypto_wallet\",\"key\":\"1a\",\"display\":\"1A\"}]",
             "[]", "blog", "marketplace", 0));
 
-        assertThat(text).contains("versão 1 e a 2", "de blog para marketplace", "Entidades novas: 1A (crypto_wallet)",
-            "Trechos adicionados:\nAgora aceitamos Monero.").doesNotContain("Trechos removidos", "sumiram");
+        assertThat(text).startsWith("Summarize in 1 to 3 sentences what changed")
+            .contains("version 1 and 2", "Category: from blog to marketplace", "New entities: 1A (crypto_wallet)",
+                "Added text:\nAgora aceitamos Monero.")
+            .doesNotContain("Removed text", "Removed entities", "Resuma");
     }
 
     @Test

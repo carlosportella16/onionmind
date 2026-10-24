@@ -31,13 +31,13 @@ public class ClassifierProcessor extends AbstractAiProcessor {
     }
 
     private static final String ALLOWED =
-        "Categorias permitidas (responda com exatamente uma, em minúsculas): "
+        "Allowed categories (answer with exactly one, in lowercase): "
             + String.join(", ", new java.util.TreeSet<>(TAXONOMY)) + ".\n\n";
 
     @Override
     protected Document enrich(Document document, String text) {
         Classification result = orchestrator.classify(ALLOWED + text,
-            TaskContext.batch(TaskContext.TaskType.CLASSIFY, approxTokens(text), "pt", false));
+            TaskContext.batch(TaskContext.TaskType.CLASSIFY, approxTokens(text), "en", false));
 
         String raw = result.category() == null ? "" : result.category().trim().toLowerCase(Locale.ROOT);
         String category = TAXONOMY.contains(raw) ? raw : "other";

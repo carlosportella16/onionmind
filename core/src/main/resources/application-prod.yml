@@ -21,21 +21,22 @@ spring:
 server:
   port: 8081
 
-# Phase 2: embeddings + semantic search (Gemini embeddings, same key as ai.gemini).
+# Phase 2: embeddings + semantic search (local ONNX model — see application.yml).
 qdrant:
   url: ${QDRANT_URL:localhost}
   port: ${QDRANT_PORT:6333}
   api-key: ${QDRANT_API_KEY:}
-  collection: ${QDRANT_COLLECTION:page_chunks_v2}
+  collection: ${QDRANT_COLLECTION:page_chunks_v3}
   vector-size: ${embedding.dimensions}
 
 embedding:
   enabled: ${EMBEDDING_ENABLED:false}
-  model: gemini-embedding-2
-  dimensions: 768
-  request-batch-size: 100
+  model: multilingual-e5-small-int8
+  model-dir: ${EMBEDDING_MODEL_DIR:${user.home}/.cache/onionmind/models/multilingual-e5-small}
+  threads: ${EMBEDDING_THREADS:2}
+  dimensions: 384
   max-chars-per-page: 50000
-  chunk-size: 512
+  chunk-size: 400
   chunk-overlap-percent: 15
   batch-size: 100
   min-score: 0.45   # calibrated live 2026-09-06 (fase3-sdd sec 11.4/P2-2) — see application.yml

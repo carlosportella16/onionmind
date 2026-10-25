@@ -84,24 +84,29 @@ management:
       # Neo4j is optional (graph.enabled) — a missing graph must not mark the app DOWN.
       enabled: ${graph.enabled:false}
 
-# Phase 2: embeddings + semantic search. Embeddings come from Gemini (ai.gemini.base-url /
-# api-key), paid tier, even with ai.enabled off (replace-ollama-with-gemini-deepseek D6).
+# Phase 2: embeddings + semantic search. Embeddings are made in-process by a local ONNX model
+# (local-onnx-embeddings): no text leaves the machine and no API key is needed.
 qdrant:
   url: localhost
   port: 6333
   api-key: ${QDRANT_API_KEY:}
-  # One collection per embedding model, so vectors never mix (D7). The old nomic-embed-text
-  # collection (page_chunks) is left alone until deleted by hand — see README.
-  collection: page_chunks_v2
+  # One collection per embedding model, so vectors never mix. The older collections
+  # (page_chunks, page_chunks_v2) are left alone until deleted by hand — see README.
+  collection: page_chunks_v3
   vector-size: ${embedding.dimensions}
 
 embedding:
   enabled: false
-  model: gemini-embedding-2      # multilingual: Portuguese queries against an English corpus
-  dimensions: 768                # outputDimensionality; Gemini normalizes truncated vectors itself
-  request-batch-size: 100        # texts per batchEmbedContents call (no documented maximum)
+  model: multilingual-e5-small-int8  # stored in every point; Portuguese queries against an English corpus
+  # model_quantized.onnx + sentencepiece.bpe.model, from scripts/fetch-embedding-model.sh.
+  # With embedding.enabled the core does not boot without them.
+  model-dir: ${EMBEDDING_MODEL_DIR:${user.home}/.cache/onionmind/models/multilingual-e5-small}
+  threads: 2                     # inference threads; one inference at a time (D4)
+  dimensions: 384
   max-chars-per-page: 50000      # only the start of a page is embedded: a 1.3 MB listing is ~25 chunks
-  chunk-size: 512
+  # Estimated tokens (4 chars each). The model reads 510 and cuts the rest, counted in
+  # embedding_truncated_chunks_total: at 512 (2048 chars) 35-46% of real chunks were cut (D5).
+  chunk-size: 400
   chunk-overlap-percent: 15
   batch-size: 10                 # pages per EmbeddingBackfillJob run
   backfill-interval-ms: 300000
@@ -116,8 +121,8 @@ embedding:
   # near-duplicate chunks) scores ~0.49-0.52 against nearly any query, including gibberish —
   # no min-score value separates that from a genuine paraphrase match without also losing the
   # paraphrase; the real fix is a content-quality gate before embedding, not this number.
-  # These numbers are nomic-embed-text's: recalibrate for gemini-embedding-2 with the same
-  # procedure (replace-ollama-with-gemini-deepseek D8, task 5.3) before trusting 0.45.
+  # These numbers are nomic-embed-text's: recalibrate for multilingual-e5-small with the same
+  # procedure (local-onnx-embeddings 6.2) before trusting 0.45.
   min-score: 0.45
 
 # Phase 3: generative AI (summarize / classify / translate). Separate from embedding.enabled

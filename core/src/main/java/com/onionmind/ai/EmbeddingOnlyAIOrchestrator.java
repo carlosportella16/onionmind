@@ -8,7 +8,7 @@ import java.util.List;
 /**
  * Embeddings only, no generation. Active when {@code embedding.enabled=true} and
  * {@code ai.enabled} is not on — once {@code ai.enabled=true}, DefaultAIOrchestrator takes
- * over (and still serves {@code embed()} via the same {@link GeminiEmbedder}).
+ * over (and still serves {@code embed()} via the same {@link OnnxEmbedder}).
  */
 @Component
 @ConditionalOnExpression("!${ai.enabled:false} and ${embedding.enabled:false}")
@@ -16,9 +16,9 @@ public class EmbeddingOnlyAIOrchestrator implements AIOrchestrator {
 
     private static final String MESSAGE = "Geração por IA está desligada — ligue ai.enabled";
 
-    private final GeminiEmbedder embedder;
+    private final OnnxEmbedder embedder;
 
-    EmbeddingOnlyAIOrchestrator(GeminiEmbedder embedder) {
+    EmbeddingOnlyAIOrchestrator(OnnxEmbedder embedder) {
         this.embedder = embedder;
     }
 
@@ -59,11 +59,11 @@ public class EmbeddingOnlyAIOrchestrator implements AIOrchestrator {
 
     @Override
     public Embedding embed(String text, TaskContext ctx) {
-        return embedder.embed(List.of(text), null, ctx.interactive()).getFirst();
+        return embedder.embed(List.of(text), ctx.interactive()).getFirst();
     }
 
     @Override
     public List<Embedding> embedAll(List<String> texts, String title, TaskContext ctx) {
-        return embedder.embed(texts, title, ctx.interactive());
+        return embedder.embed(texts, ctx.interactive());
     }
 }

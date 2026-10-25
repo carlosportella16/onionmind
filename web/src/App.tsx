@@ -3,9 +3,10 @@ import { search, searchSemantic, type SearchResult } from './api/search';
 import { SearchBar } from './components/SearchBar';
 import { ResultList } from './components/ResultList';
 import { Chat } from './components/Chat';
+import { Agents } from './components/Agents';
 import './App.css';
 
-type Tab = 'search' | 'chat';
+type Tab = 'search' | 'chat' | 'agents';
 
 function App() {
   const [tab, setTab] = useState<Tab>('search');
@@ -31,7 +32,7 @@ function App() {
         <span className="app-name">onionmind</span>
         <span className="app-tagline">search the tor network</span>
         <nav className="app-tabs">
-          {(['search', 'chat'] as const).map((t) => (
+          {(['search', 'chat', 'agents'] as const).map((t) => (
             <button
               key={t}
               type="button"
@@ -51,8 +52,10 @@ function App() {
             <SearchBar onSearch={handleSearch} />
             <ResultList results={results} total={total} hasSearched={hasSearched} />
           </>
-        ) : (
+        ) : tab === 'chat' ? (
           <Chat />
+        ) : (
+          <Agents />
         )}
       </main>
     </div>

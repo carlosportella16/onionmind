@@ -105,25 +105,25 @@ embedding:
   dimensions: 384
   max-chars-per-page: 50000      # only the start of a page is embedded: a 1.3 MB listing is ~25 chunks
   # Estimated tokens (4 chars each). The model reads 510 and cuts the rest, counted in
-  # embedding_truncated_chunks_total: at 512 (2048 chars) 35-46% of real chunks were cut (D5).
-  chunk-size: 400
+  # embedding_truncated_chunks_total. On the dev corpus (579 pages, 2026-10-25) the share of cut
+  # chunks was 42% at 512, 17% at 400, 12% at 350 and 8% at 300; what is still cut is mostly
+  # pages that are bare lists of .onion addresses (local-onnx-embeddings D5, task 6.2).
+  chunk-size: 300
   chunk-overlap-percent: 15
   batch-size: 10                 # pages per EmbeddingBackfillJob run
   backfill-interval-ms: 300000
   # Cosine similarity floor for semantic search hits — Qdrant's k-NN always returns topK
   # nearest points even when nothing is actually relevant (small corpus, unrelated query).
-  # Calibrated live 2026-09-06 (fase3-sdd sec 11.4/P2-2) against real nomic-embed-text +
-  # Qdrant: across 7 queries / ~1600 candidate chunks, p50=0.39, p90=0.485, gibberish/noise
-  # topped out at ~0.52, genuine concept-level (paraphrased, no literal term overlap) matches
-  # landed ~0.47, direct on-topic matches scored 0.63+. 0.35 was barely above the median —
-  # it filtered almost nothing. 0.45 keeps concept-level and direct matches while cutting most
-  # of the noise floor. Known gap: one degenerate page (a raw link-list with hundreds of
-  # near-duplicate chunks) scores ~0.49-0.52 against nearly any query, including gibberish —
-  # no min-score value separates that from a genuine paraphrase match without also losing the
-  # paraphrase; the real fix is a content-quality gate before embedding, not this number.
-  # These numbers are nomic-embed-text's: recalibrate for multilingual-e5-small with the same
-  # procedure (local-onnx-embeddings 6.2) before trusting 0.45.
-  min-score: 0.45
+  # Calibrated live 2026-10-25 for multilingual-e5-small (local-onnx-embeddings 6.2) with the
+  # procedure of fase3-sdd sec 11.4/P2-2: the 10 chat evaluation questions (5 pt, 5 en), raw and
+  # rewritten into English keywords, plus 9 off-topic and gibberish queries, top 20 hits each over
+  # the 3296 dev chunks. e5 scores are compressed: p50 0.834, p90 0.868; the expected page scored
+  # 0.808-0.931 where found (18 of 20); off-topic queries topped out at 0.83-0.85, gibberish at
+  # 0.87 and "lorem ipsum" at 0.90. No floor separates noise from matches on the real corpus —
+  # ranking and RRF do that — so 0.79 only keeps every match found and cuts what scores clearly
+  # lower, such as a Portuguese off-topic query against English pages (~0.72-0.78).
+  # Previous model: nomic-embed-text, 0.45 (2026-09-06).
+  min-score: 0.79
 
 # Phase 3: generative AI (summarize / classify / translate). Separate from embedding.enabled
 # so embeddings and generation can roll out independently (fase3-sdd sec. 8, D1).

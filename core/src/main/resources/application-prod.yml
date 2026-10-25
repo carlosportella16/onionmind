@@ -36,10 +36,10 @@ embedding:
   threads: ${EMBEDDING_THREADS:2}
   dimensions: 384
   max-chars-per-page: 50000
-  chunk-size: 400
+  chunk-size: 300   # see application.yml
   chunk-overlap-percent: 15
   batch-size: 100
-  min-score: 0.45   # calibrated live 2026-09-06 (fase3-sdd sec 11.4/P2-2) — see application.yml
+  min-score: 0.79   # multilingual-e5-small, calibrated live 2026-10-25 — see application.yml
 
 # Phase 3: same shape as application.yml, only enabled + keys differ per environment (fase3-sdd D1).
 ai:

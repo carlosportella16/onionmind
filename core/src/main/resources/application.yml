@@ -142,18 +142,20 @@ ai:
     batch-size: 20             # pages per scheduled run of AiEnrichmentBackfillJob
     interval-ms: 300000
     max-attempts: 5            # failed runs before a page goes failed_permanent; new content resets it
-  # One ladder for every task, cheapest first (replace-ollama-with-gemini-deepseek D3). Only
-  # paid providers: .onion content must not reach a free tier that trains on it (2026-10-24).
-  ladder: gemini,deepseek
+  # Only providers approved for .onion text (local-onnx-embeddings D7): DeepSeek, prepaid. The
+  # only Gemini key at hand is on the FREE tier, which may train on the text and have it reviewed
+  # by people (429s with a -FreeTier quotaId, 2026-10-25); a free-tier 429 parks the provider
+  # until released anyway. Gemini goes back to the front of the ladder (gemini,deepseek) with a
+  # key of a project WITH billing.
+  ladder: deepseek
   # Request and token ceilings per provider id (ai-token-quota D5); a ceiling left out is not
   # tracked. A provider without an entry (deepseek) is never gated by quota — its prepaid
   # balance is the spending cap, and a 402 parks it (D5).
-  providers:
-    # Read in AI Studio (aistudio.google.com/rate-limit, project dfOps, 2026-10-24) for
-    # gemini-3.5-flash-lite: 15 RPM, 250K input TPM, 500 RPD; no tokens-per-day is shown, so it
-    # is left out. The project is still on the FREE tier — raise these after billing is on.
-    # gemini-embedding-2 (not gated here): 100 RPM, 30K TPM, 1K RPD on the same page.
-    gemini: { requests-per-minute: 15, requests-per-day: 500, tokens-per-minute: 250000 }
+  # Reactivate with a key of a project with billing (raise the ceilings to that tier's): read in
+  # AI Studio (aistudio.google.com/rate-limit, project dfOps, 2026-10-24) for
+  # gemini-3.5-flash-lite on the free tier: 15 RPM, 250K input TPM, 500 RPD.
+  # providers:
+  #   gemini: { requests-per-minute: 15, requests-per-day: 500, tokens-per-minute: 250000 }
   gemini:
     base-url: https://generativelanguage.googleapis.com/v1beta
     # gemini-2.5-flash-lite is closed to new users (HTTP 404, 2026-10-24); 3.5 Flash-Lite is what

@@ -52,10 +52,10 @@ ai:
   max-input-chars: 8000
   backfill:
     max-attempts: 5
-  ladder: gemini,deepseek
-  providers:
-    # Same as application.yml (AI Studio, 2026-10-24, free tier) — raise after billing is on.
-    gemini: { requests-per-minute: 15, requests-per-day: 500, tokens-per-minute: 250000 }
+  ladder: deepseek            # only providers approved for .onion text — see application.yml
+  # Reactivate with a key of a project with billing (see application.yml):
+  # providers:
+  #   gemini: { requests-per-minute: 15, requests-per-day: 500, tokens-per-minute: 250000 }
   gemini:
     base-url: https://generativelanguage.googleapis.com/v1beta
     model: ${GEMINI_MODEL:gemini-3.5-flash-lite}

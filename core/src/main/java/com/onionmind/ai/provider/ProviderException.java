@@ -8,8 +8,11 @@ package com.onionmind.ai.provider;
  */
 public class ProviderException extends RuntimeException {
 
-    /** Which ceiling the provider hit: it decides how long the provider stays parked. */
-    public enum Quota { MINUTE, DAY, BALANCE }
+    /**
+     * Which ceiling the provider hit: it decides how long the provider stays parked. BALANCE (402)
+     * and FREE_TIER (a 429 from a free-tier quota) park until released.
+     */
+    public enum Quota { MINUTE, DAY, BALANCE, FREE_TIER }
 
     private final boolean retryable;
     private final Quota exhausted;

@@ -22,11 +22,13 @@ import java.util.concurrent.Executors;
 public class SearchController {
     private final JdbcTemplate jdbc;
     private final SemanticSearchService semanticSearchService;
+    private final FullTextSearch fullText;
     private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
 
-    public SearchController(JdbcTemplate jdbc, SemanticSearchService semanticSearchService) {
+    public SearchController(JdbcTemplate jdbc, SemanticSearchService semanticSearchService, FullTextSearch fullText) {
         this.jdbc = jdbc;
         this.semanticSearchService = semanticSearchService;
+        this.fullText = fullText;
     }
 
     @PreDestroy
@@ -47,8 +49,9 @@ public class SearchController {
 
         // Full-text e vetorial em paralelo — latência é a mais lenta das duas, não a soma
         // (master-sdd sec. 9).
-        var textFuture = CompletableFuture.supplyAsync(() -> fullTextSearch(q, effectiveSize, offset), executor);
-        var totalFuture = CompletableFuture.supplyAsync(() -> fullTextTotal(q), executor);
+        var textFuture = CompletableFuture.supplyAsync(
+            () -> fullText.search(q, effectiveSize, offset, FullTextSearch.SNIPPET), executor);
+        var totalFuture = CompletableFuture.supplyAsync(() -> fullText.total(q), executor);
         var semanticFuture = semanticSearchService.isAvailable()
             ? CompletableFuture.supplyAsync(() -> semanticSearchService.search(q, effectiveSize), executor)
             : CompletableFuture.completedFuture(List.<SearchResult>of());
@@ -61,13 +64,13 @@ public class SearchController {
             return ResponseEntity.ok(new SearchResponse(textResults, textTotal, page, size));
         }
 
-        // Fusão simples (Fase 2, roadmap master-sdd sec. 5) só combina as duas fontes na
-        // primeira página; hybrid retrieval paginado de verdade (RRF k=60) é escopo da Fase 5.
+        // RRF k=60 (phase5-rag-chat D2) só combina as duas fontes na primeira página; as
+        // seguintes seguem só com o full-text, como antes — o contrato não muda.
         if (page > 0) {
             return ResponseEntity.ok(new SearchResponse(textResults, textTotal, page, size));
         }
 
-        List<SearchResult> fused = HybridRanker.fuse(textResults, semanticResults, effectiveSize);
+        List<SearchResult> fused = ReciprocalRankFusion.fuse(textResults, semanticResults, effectiveSize);
         long fusedTotal = unionSize(textResults, semanticResults);
         return ResponseEntity.ok(new SearchResponse(fused, fusedTotal, page, size));
     }
@@ -92,33 +95,6 @@ public class SearchController {
             "total_versions", jdbc.queryForObject("SELECT count(*) FROM page_versions", Long.class),
             "sources", jdbc.queryForList("SELECT source_type, count(*) as n FROM pages GROUP BY source_type")
         );
-    }
-
-    private List<SearchResult> fullTextSearch(String q, int size, int offset) {
-        return jdbc.query("""
-            SELECT id, url, source_type,
-                   ts_headline('simple', extracted_text, websearch_to_tsquery('simple', ?),
-                                'MaxFragments=2, MaxWords=40, MinWords=20') AS snippet,
-                   ts_rank(search_vector, websearch_to_tsquery('simple', ?)) AS rank,
-                   version, first_seen_at, last_seen_at,
-                   summary->>'text' AS summary, category->>'category' AS category
-            FROM pages
-            WHERE search_vector @@ websearch_to_tsquery('simple', ?)
-            ORDER BY rank DESC
-            LIMIT ? OFFSET ?
-            """, (rs, rowNum) -> new SearchResult(
-                rs.getLong("id"), rs.getString("url"), rs.getString("source_type"),
-                rs.getString("snippet"), rs.getDouble("rank"), rs.getInt("version"),
-                rs.getTimestamp("first_seen_at").toInstant(), rs.getTimestamp("last_seen_at").toInstant(),
-                rs.getString("summary"), rs.getString("category")
-            ), q, q, q, size, offset);
-    }
-
-    private long fullTextTotal(String q) {
-        return jdbc.queryForObject("""
-            SELECT count(*) FROM pages
-            WHERE search_vector @@ websearch_to_tsquery('simple', ?)
-            """, Long.class, q);
     }
 
     private long unionSize(List<SearchResult> a, List<SearchResult> b) {

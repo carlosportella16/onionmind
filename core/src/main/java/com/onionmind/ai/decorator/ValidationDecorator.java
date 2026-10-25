@@ -36,8 +36,34 @@ public class ValidationDecorator {
             case TRANSLATE -> extract(json, "translation", "detectedLanguage");
             case DETECT_LANGUAGE -> extract(json, "language", null);
             case EXTRACT_ENTITIES -> extractEntities(json);
+            case REWRITE_QUERY -> extract(json, "query", null);
+            case ANSWER -> extractAnswer(json);
             case EMBED -> ValidatedResult.invalid();
         };
+    }
+
+    /**
+     * {@code {"answer": "...", "citations": ["S1", ...], "confidence": x}}. A blank answer or
+     * citations that aren't a list of strings is invalid — prompt-injected prose never gets
+     * through. The citations travel as a JSON array in {@code secondary}; whether each id was
+     * actually sent is the orchestrator's check.
+     */
+    private ValidatedResult extractAnswer(JsonNode json) {
+        JsonNode answer = json.get("answer");
+        JsonNode citations = json.get("citations");
+        if (answer == null || !answer.isString() || answer.asString().isBlank()
+                || citations == null || !citations.isArray()) {
+            return ValidatedResult.invalid();
+        }
+        List<String> ids = new ArrayList<>();
+        for (JsonNode c : citations) {
+            if (!c.isString()) {
+                return ValidatedResult.invalid();
+            }
+            ids.add(c.asString());
+        }
+        return new ValidatedResult(answer.asString(), mapper.writeValueAsString(ids),
+            clamp(json.path("confidence").asDouble(0.0)));
     }
 
     /**

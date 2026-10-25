@@ -48,6 +48,16 @@ public class EmbeddingOnlyAIOrchestrator implements AIOrchestrator {
     }
 
     @Override
+    public QueryRewrite rewriteQuery(String question, TaskContext ctx) {
+        throw new UnsupportedOperationException(MESSAGE);
+    }
+
+    @Override
+    public Answer answer(String question, List<String> sources, TaskContext ctx) {
+        throw new UnsupportedOperationException(MESSAGE);
+    }
+
+    @Override
     public Embedding embed(String text, TaskContext ctx) {
         return embedder.embed(List.of(text), null, ctx.interactive()).getFirst();
     }

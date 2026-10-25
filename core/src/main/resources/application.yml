@@ -192,6 +192,16 @@ intelligence:
     interval-ms: 300000
     max-attempts: 3
 
+# Phase 5: RAG chat (POST /api/chat). Generation needs ai.enabled; without it every answer
+# comes back degraded, with the search results. k and the context size are to be calibrated
+# against the evaluation set (phase5-rag-chat 6.2).
+chat:
+  top-k: 8                     # pages fused by RRF and sent as sources S1..S8
+  max-context-chars: 12000     # total passage text sent to the model
+  max-question-chars: 1000     # longer questions are a 400
+  rewrite-timeout: 3s          # past it, retrieval goes on with the original question
+  answer-timeout: 12s          # past it, the response is degraded
+
 events:
-  resubmit-after: 10m          # incomplete event publications older than this are redelivered
+  resubmit-after: 10m         # incomplete event publications older than this are redelivered
   resubmit-interval-ms: 300000

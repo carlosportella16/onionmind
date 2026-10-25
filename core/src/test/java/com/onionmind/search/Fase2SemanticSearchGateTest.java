@@ -109,7 +109,7 @@ class Fase2SemanticSearchGateTest {
                 public List<SemanticSearchHit> search(float[] queryVector, int topK) {
                     // Stands in for real cosine similarity: the fake always resolves the
                     // concept query to the page whose text never contains the literal term.
-                    return List.of(new SemanticSearchHit(CONCEPT_PAGE_URL, 0, 0.93));
+                    return List.of(new SemanticSearchHit(CONCEPT_PAGE_URL, 0, 0.93, null));
                 }
 
                 @Override
@@ -149,6 +149,16 @@ class Fase2SemanticSearchGateTest {
 
                 @Override
                 public com.onionmind.ai.EntityExtraction extractEntities(String text, TaskContext ctx) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public com.onionmind.ai.QueryRewrite rewriteQuery(String question, TaskContext ctx) {
+                    throw new UnsupportedOperationException();
+                }
+
+                @Override
+                public com.onionmind.ai.Answer answer(String question, java.util.List<String> sources, TaskContext ctx) {
                     throw new UnsupportedOperationException();
                 }
 

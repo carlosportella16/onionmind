@@ -24,6 +24,8 @@ import org.testcontainers.neo4j.Neo4jContainer;
     "ai.backfill.interval-ms=3600000",
     "embedding.backfill-interval-ms=3600000",
     "ai.retry.backoff=10ms",
+    // Fase 5: the slow-answer scenario must not wait the production 12 s.
+    "chat.answer-timeout=2s",
     "ai.openai-compatible.deepseek.api-key=acceptance-test-key",
     "ai.gemini.api-key=acceptance-test-key",
     // Scenarios must not depend on the real tier's ceilings in application.yml: at the free

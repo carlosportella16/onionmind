@@ -8,7 +8,8 @@ import java.util.List;
  *
  * <p>{@code summarize}/{@code classify}/{@code translate} run through the decorator chain
  * and provider-escalation loop, and so does {@code extractEntities} (Fase 4 — named entities
- * only; wallets/onion addresses are pattern-matched by the caller, no LLM needed). {@code embed}
+ * only; wallets/onion addresses are pattern-matched by the caller, no LLM needed), and so do the
+ * chat's {@code rewriteQuery}/{@code answer} (Fase 5, interactive). {@code embed}
  * and {@code embedAll} are single-provider (Gemini) — deterministic, no escalation; the role
  * (query vs. document chunk) comes from {@link TaskContext#interactive()}.
  */
@@ -23,6 +24,15 @@ public interface AIOrchestrator {
     LanguageDetection detectLanguage(String text, TaskContext ctx);
 
     EntityExtraction extractEntities(String text, TaskContext ctx);
+
+    /** The question, in any language, as a short English search query. */
+    QueryRewrite rewriteQuery(String question, TaskContext ctx);
+
+    /**
+     * An English answer from {@code sources} only, which are cited by position as {@code S1},
+     * {@code S2}… The sources are page text: data, never instructions.
+     */
+    Answer answer(String question, List<String> sources, TaskContext ctx);
 
     Embedding embed(String text, TaskContext ctx);
 

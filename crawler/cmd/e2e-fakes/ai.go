@@ -72,6 +72,15 @@ func answer(prompt string) map[string]any {
 		return map[string]any{"category": "forum", "confidence": 0.9}
 	case strings.Contains(prompt, "Identify the predominant language"):
 		return map[string]any{"language": "pt", "confidence": 0.9}
+	case strings.Contains(prompt, "Rewrite the question as a short English search query"):
+		// The system prompt is one line; the question follows it.
+		_, question, _ := strings.Cut(prompt, "\n")
+		return map[string]any{"query": strings.TrimSpace(question), "confidence": 0.9}
+	case strings.Contains(prompt, "Answer the question using only the sources"):
+		if strings.Contains(prompt, `<source id="S1">`) {
+			return map[string]any{"answer": "The indexed pages answer this [S1].", "citations": []string{"S1"}, "confidence": 0.9}
+		}
+		return map[string]any{"answer": "The sources do not answer the question.", "citations": []string{}, "confidence": 0.9}
 	default:
 		return map[string]any{"summary": "Automatic summary of the page.", "confidence": 0.9}
 	}

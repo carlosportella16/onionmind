@@ -66,7 +66,7 @@ Most Tor search engines are link lists without ranking or context. OnionMind cha
 | **2** | Semantic search (embeddings + Qdrant) | ✅ Complete — live gate re-run 2026-09-06 | Concept-based search works |
 | **3** | AI generation (summarize, classify) | ✅ Complete — validated live 2026-09-06 | New page summarized in minutes, quota never exceeded |
 | **4** | Knowledge graph + versioning | 🚧 Implemented — live gate pending | "What changed?" answers correctly |
-| **5** | Full RAG + Agent Playground | ⏳ Planned | RAG pipeline functional, real-world tested |
+| **5** | Full RAG + Agent Playground | 🚧 RAG chat implemented — live gate pending | RAG pipeline functional, real-world tested |
 | **6** | External connectors (RSS, GitHub, PDF) | ⏳ Backlog | — |
 
 ### Phase 1 Details
@@ -122,6 +122,26 @@ Relates entities across pages and answers "what changed" (`docs/onionmind-fase4-
 - **Events (ADR-009):** a complete AI enrichment publishes `PageEnrichedEvent`; quarantine publishes `PageQuarantinedEvent`. The `graph` and `intelligence` modules react through `@ApplicationModuleListener` — async, after commit, durable in the Event Publication Registry and redelivered by `EventResubmissionJob`.
 - **Knowledge graph** (Neo4j, `graph.enabled`): `(:Page)-[:MENTIONS]->(:Entity)` plus `(:Page)-[:HOSTED_ON]->(:OnionService)`. A projection of `pages.entities` — a new version replaces the page's mentions, quarantine removes the page. `GET /api/entities/{type}/{key}` returns the pages citing an entity and what co-occurs with it.
 - **What changed** (`intelligence`): each new enriched version is diffed against the last enriched one (sentence sets, digits masked, so counters and dates are not changes), with entity and category deltas. Real changes are summarized by a scheduled job; `GET /api/changes?since=&category=&limit=` serves them with no live LLM call. Quarantine also erases archived text and change history.
+
+### Phase 5 Details
+
+Answers questions about the indexed pages (`phase5-rag-chat`): rewrite → hybrid retrieval → generation, no re-rank.
+- **Hybrid search:** `/api/search` fuses full-text and vector results by Reciprocal Rank Fusion (`Σ 1/(60 + rank)`), on the first page only, as before. Same response contract.
+- **`POST /api/chat`** with `{"question": "..."}`, in any language:
+  1. the question is rewritten into a short English search query (3 s deadline; on failure the original question is used);
+  2. full-text runs with the question and the rewritten query, vector search with the rewritten one, fused by RRF; each of the top `chat.top-k` (8) pages contributes its best vector chunk (the `text` in the Qdrant payload) or a `ts_headline` window, up to `chat.max-context-chars` (12 000) in total;
+  3. the model answers in English from those sources only, citing them as `S1`…`S8`; citations to ids it was not sent are dropped, and an answer with no valid citation becomes "The indexed pages do not contain an answer to this question.".
+
+  The response carries `answer`, `sources` (`id`, `url`, `snippet`), `results` (the search results) and `degraded`. If generation fails or takes longer than `chat.answer-timeout` (12 s), it comes back with `degraded: true`, an empty `answer` and the results. A question that is blank or longer than `chat.max-question-chars` (1000) is a 400. Both LLM calls are interactive: they keep only the safety margin of the token budget, not the batch reserve.
+- **Re-embed the corpus:** the chat cites the chunk `text` stored in the Qdrant payload, and every point in `page_chunks_v2` has it. A page with no point there yet (not re-embedded since the move off `page_chunks`) is still found by full-text and cited by a `ts_headline` window. To embed the whole corpus into the current collection, mark it and let the embedding backfill run (`embedding.batch-size` pages every `embedding.backfill-interval-ms`). A page whose points are already current (same content hash and model) comes back `unchanged` without an embedding call:
+  ```sql
+  UPDATE pages SET embedding_status = 'pending';
+  ```
+
+```bash
+curl -s localhost:8081/api/chat -H 'Content-Type: application/json' \
+  -d '{"question": "quais mercados vendem documentos falsos?"}'
+```
 
 ---
 

@@ -3,6 +3,8 @@ package com.onionmind.ai;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
+import java.util.List;
+
 /**
  * Neither embeddings nor generation are enabled — every call fails loudly. Active when
  * both {@code ai.enabled} and {@code embedding.enabled} are off (the default).
@@ -35,6 +37,16 @@ public class NoOpAIOrchestrator implements AIOrchestrator {
 
     @Override
     public EntityExtraction extractEntities(String text, TaskContext ctx) {
+        throw new UnsupportedOperationException(MESSAGE);
+    }
+
+    @Override
+    public QueryRewrite rewriteQuery(String question, TaskContext ctx) {
+        throw new UnsupportedOperationException(MESSAGE);
+    }
+
+    @Override
+    public Answer answer(String question, List<String> sources, TaskContext ctx) {
         throw new UnsupportedOperationException(MESSAGE);
     }
 

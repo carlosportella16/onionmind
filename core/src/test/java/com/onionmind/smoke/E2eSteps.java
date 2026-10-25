@@ -7,6 +7,7 @@ import tools.jackson.databind.JsonNode;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -14,8 +15,9 @@ import static org.awaitility.Awaitility.await;
 
 /**
  * Waits for the crawl to show up through the core's API (features/smoke/e2e.feature, run by
- * scripts/e2e-smoke.sh). GET-only like the rest of the smoke glue; the e2e stack has no
- * "crawl finished" signal, so every positive check polls until its deadline.
+ * scripts/e2e-smoke.sh). Read-only like the rest of the smoke glue (the chat's POST changes
+ * nothing); the e2e stack has no "crawl finished" signal, so every positive check polls until
+ * its deadline.
  */
 public class E2eSteps {
 
@@ -61,6 +63,20 @@ public class E2eSteps {
             List<String> pages = new ArrayList<>();
             response.json().path("pages").forEach(p -> pages.add(p.path("url").asString()));
             assertThat(pages).contains(url);
+        });
+    }
+
+    /** POST, but /api/chat only reads: the glue still changes nothing on the instance. */
+    @Então("em até {int} segundos o chat responde a {string} citando a página {string}")
+    public void eventuallyChatCites(int seconds, String question, String url) {
+        await().atMost(Duration.ofSeconds(seconds)).pollInterval(Duration.ofSeconds(1)).untilAsserted(() -> {
+            HttpJson response = HttpJson.post(SmokeSteps.BASE_URL + "/api/chat", Map.of("question", question));
+            assertThat(response.status()).as(response.body()).isEqualTo(200);
+            assertThat(response.json().path("degraded").asBoolean()).as(response.body()).isFalse();
+            assertThat(response.json().path("answer").asString()).isNotBlank();
+            List<String> sources = new ArrayList<>();
+            response.json().path("sources").forEach(s -> sources.add(s.path("url").asString()));
+            assertThat(sources).contains(url);
         });
     }
 

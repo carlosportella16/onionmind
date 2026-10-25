@@ -75,6 +75,8 @@ public class CommonSteps {
 
     @Before
     public void resetState() throws Exception {
+        jdbc.update("DELETE FROM agent_runs");
+        jdbc.update("DELETE FROM agents WHERE name <> 'Research Agent'");
         jdbc.update("DELETE FROM event_publication");
         jdbc.update("DELETE FROM page_changes");
         jdbc.update("DELETE FROM page_versions");

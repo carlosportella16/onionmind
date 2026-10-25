@@ -9,8 +9,8 @@ spring:
         # never block the other's turn (fix-large-page-backfill-limits, found live
         # 2026-09-07: a 13-minute EmbeddingBackfillJob run starved AiEnrichmentBackfillJob
         # completely). Phase 4 adds ChangeSummaryJob and EventResubmissionJob — one thread
-        # per job, so none can starve another.
-        size: 4
+        # per job, so none can starve another. Phase 5 adds DailyAgentJob.
+        size: 5
     execution:
       pool:
         # Runs the async @ApplicationModuleListeners (Phase 4). The queue is unbounded, so
@@ -201,6 +201,15 @@ chat:
   max-question-chars: 1000     # longer questions are a 400
   rewrite-timeout: 3s          # past it, retrieval goes on with the original question
   answer-timeout: 12s          # past it, the response is degraded
+
+# Phase 5: Agent Playground (/api/agents). A run is synchronous, with a deadline per cost
+# profile (phase5-agent-playground D5); reports need ai.enabled, without it a run fails.
+agents:
+  max-instructions-chars: 4000
+  interactive-timeout: 20s
+  batch-timeout: 60s
+  daily:
+    cron: "0 0 6 * * *"        # UTC; runs every agent with daily = true, as batch
 
 events:
   resubmit-after: 10m         # incomplete event publications older than this are redelivered

@@ -25,7 +25,7 @@ class ChangesControllerTest {
     @BeforeEach
     void setUp() {
         jdbc = mock(JdbcTemplate.class);
-        mvc = MockMvcBuilders.standaloneSetup(new ChangesController(jdbc,
+        mvc = MockMvcBuilders.standaloneSetup(new ChangesController(new ChangeQuery(jdbc),
             Clock.fixed(Instant.parse("2026-10-21T12:00:00Z"), ZoneOffset.UTC))).build();
     }
 

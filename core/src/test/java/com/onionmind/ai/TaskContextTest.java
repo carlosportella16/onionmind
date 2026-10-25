@@ -29,7 +29,8 @@ class TaskContextTest {
                 TaskContext.TaskType.EXTRACT_ENTITIES,
                 TaskContext.TaskType.EMBED,
                 TaskContext.TaskType.REWRITE_QUERY,
-                TaskContext.TaskType.ANSWER
+                TaskContext.TaskType.ANSWER,
+                TaskContext.TaskType.REPORT
         );
     }
 }

@@ -37,19 +37,20 @@ public class ValidationDecorator {
             case DETECT_LANGUAGE -> extract(json, "language", null);
             case EXTRACT_ENTITIES -> extractEntities(json);
             case REWRITE_QUERY -> extract(json, "query", null);
-            case ANSWER -> extractAnswer(json);
+            case ANSWER -> extractCited(json, "answer");
+            case REPORT -> extractCited(json, "report");
             case EMBED -> ValidatedResult.invalid();
         };
     }
 
     /**
-     * {@code {"answer": "...", "citations": ["S1", ...], "confidence": x}}. A blank answer or
+     * {@code {"answer"|"report": "...", "citations": ["S1", ...], "confidence": x}}. A blank text or
      * citations that aren't a list of strings is invalid — prompt-injected prose never gets
      * through. The citations travel as a JSON array in {@code secondary}; whether each id was
      * actually sent is the orchestrator's check.
      */
-    private ValidatedResult extractAnswer(JsonNode json) {
-        JsonNode answer = json.get("answer");
+    private ValidatedResult extractCited(JsonNode json, String textField) {
+        JsonNode answer = json.get(textField);
         JsonNode citations = json.get("citations");
         if (answer == null || !answer.isString() || answer.asString().isBlank()
                 || citations == null || !citations.isArray()) {

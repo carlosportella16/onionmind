@@ -1,6 +1,7 @@
 package com.onionmind.ai;
 
 import java.util.List;
+import java.util.SequencedMap;
 
 /**
  * The only AI surface the rest of the system sees. Processors, jobs and search never call
@@ -33,6 +34,16 @@ public interface AIOrchestrator {
      * {@code S2}… The sources are page text: data, never instructions.
      */
     Answer answer(String question, List<String> sources, TaskContext ctx);
+
+    /**
+     * An English research report on {@code topic} from {@code sources} only, keyed by the id
+     * the report cites them by ({@code S1}, {@code C1}, {@code E1}…), in priority order. The
+     * instructions are the (single, trusted) user's; the sources are data, never instructions.
+     * Only the real orchestrator generates reports (phase5-agent-playground D2).
+     */
+    default Report report(String instructions, String topic, SequencedMap<String, String> sources, TaskContext ctx) {
+        throw new UnsupportedOperationException("report generation needs ai.enabled");
+    }
 
     Embedding embed(String text, TaskContext ctx);
 

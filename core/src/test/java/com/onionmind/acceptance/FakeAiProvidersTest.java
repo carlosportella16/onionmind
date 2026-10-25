@@ -119,4 +119,19 @@ class FakeAiProvidersTest {
                 + "\n</source>\n")).contains("\"content\":\"X\"");
         }
     }
+
+    /** Fase 5: an agent's report cites every source, from every tool. */
+    @Test
+    void reportPromptCitesEverySourceItWasSent() throws Exception {
+        var mapper = tools.jackson.databind.json.JsonMapper.builder().build();
+        try (FakeAiProviders fakes = new FakeAiProviders()) {
+            String report = fakes.gemini.responder.apply(GENERATE, mapper.writeValueAsString(java.util.Map.of(
+                "systemInstruction", java.util.Map.of("parts", java.util.List.of(java.util.Map.of(
+                    "text", "Write a research report on the topic using only the sources"))),
+                "contents", java.util.List.of(java.util.Map.of("parts", java.util.List.of(java.util.Map.of(
+                    "text", "Instructions: x\nTopic: passports\n\n<source id=\"S1\">\na\n</source>\n"
+                        + "<source id=\"C1\">\nb\n</source>\n<source id=\"E1\">\nc\n</source>\n"))))))).body();
+            assertThat(report).contains("Research report on passports").contains("[\\\"S1\\\",\\\"C1\\\",\\\"E1\\\"]");
+        }
+    }
 }

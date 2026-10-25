@@ -1,6 +1,7 @@
 # End-to-end smoke stack (change crawler-integration-and-e2e-smoke, Neo4j since Fase 4). Everything external
-# is faked by e2e-fakes — Tor (SOCKS5), the .onion sites and the AI providers (Gemini, DeepSeek)
-# — so it runs with no network access to Tor or any AI provider, and the keys are fake.
+# is faked by e2e-fakes — Tor (SOCKS5), the .onion sites and the generation provider (DeepSeek) —
+# so it runs with no network access to Tor or any AI provider, and the key is fake. Embeddings
+# come from the real local model, mounted from scripts/fetch-embedding-model.sh's default dir.
 # Run it through scripts/e2e-smoke.sh.
 # Only the core's port is published, so it can run next to the dev docker-compose.yml
 # as long as port 8081 is free.
@@ -75,13 +76,11 @@ services:
       - --spring.datasource.url=jdbc:postgresql://postgres:5432/onionmind
       - --spring.kafka.bootstrap-servers=redpanda:9092
       - --spring.data.redis.host=redis
-      - --ai.gemini.base-url=http://fakes:8090/v1beta
-      - --ai.gemini.api-key=e2e-fake-key
       - --ai.openai-compatible.deepseek.base-url=http://fakes:8090
       - --ai.openai-compatible.deepseek.api-key=e2e-fake-key
       - --qdrant.url=qdrant
-      - --embedding.dimensions=64
       - --embedding.enabled=true
+      - --embedding.model-dir=/models
       - --embedding.backfill-interval-ms=5000
       - --ai.enabled=true
       - --ai.backfill.interval-ms=5000
@@ -91,6 +90,7 @@ services:
     volumes:
       - ../core/build/libs/core-0.0.1-SNAPSHOT.jar:/app/core.jar:ro
       - ./denylist.txt:/e2e/denylist.txt:ro
+      - ${HOME}/.cache/onionmind/models/multilingual-e5-small:/models:ro
     ports: ["8081:8081"]
     depends_on:
       postgres: { condition: service_healthy }

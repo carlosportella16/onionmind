@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # End-to-end smoke for Fases 1-5: the real crawler image crawls fake .onion sites through a
-# fake Tor, the core indexes, embeds and enriches them (fake Gemini/DeepSeek, real Qdrant), and the
-# @e2e + @smoke Cucumber scenarios check it all through the core's API. Same command
+# fake Tor, the core indexes, embeds (real local model) and enriches them (fake DeepSeek, real
+# Qdrant), and the @e2e + @smoke Cucumber scenarios check it all through the core's API. Same command
 # locally and in CI (.github/workflows/e2e.yml). Needs Docker and a free port 8081.
 #
 # Uso: ./scripts/e2e-smoke.sh
@@ -26,6 +26,9 @@ cleanup() {
   exit "$status"
 }
 trap cleanup EXIT
+
+echo "==> Modelo de embedding (montado no contêiner; não baixa de novo se já estiver lá)..."
+"$ROOT_DIR/scripts/fetch-embedding-model.sh"
 
 echo "==> Build do core (jar montado no contêiner)..."
 "${GRADLE[@]}" bootJar -q

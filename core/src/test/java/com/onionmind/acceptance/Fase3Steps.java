@@ -121,12 +121,12 @@ public class Fase3Steps {
 
     @Então("o provedor {string} não recebeu chamadas de geração")
     public void assertNoGenerationCalls(String provider) {
-        assertThat(FakeAiProviders.generationCalls(server(provider))).isZero();
+        assertThat(server(provider).requestPaths.size()).isZero();
     }
 
     @Então("o provedor {string} recebeu chamadas de geração")
     public void assertGenerationCalls(String provider) {
-        assertThat(FakeAiProviders.generationCalls(server(provider))).isPositive();
+        assertThat(server(provider).requestPaths.size()).isPositive();
     }
 
     @Então("o resultado da página {string} traz resumo e categoria")

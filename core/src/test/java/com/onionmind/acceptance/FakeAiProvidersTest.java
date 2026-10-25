@@ -2,62 +2,12 @@ package com.onionmind.acceptance;
 
 import org.junit.jupiter.api.Test;
 
-import static com.onionmind.acceptance.FakeAiProviders.cosine;
-import static com.onionmind.acceptance.FakeAiProviders.embed;
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** The fake embedding must separate concepts the way the scenarios assume (min-score 0.45). */
+/** The fake generation answers the scenarios rely on. Embeddings come from the real local model. */
 class FakeAiProvidersTest {
 
-    private static final double MIN_SCORE = 0.45;
     private static final String GENERATE = "/models/gemini-3.5-flash-lite:generateContent";
-
-    @Test
-    void paraphraseOfSameConceptScoresAboveMinScore() {
-        float[] query = embed("criptomoedas");
-        float[] page = embed("Mercado aceita moeda digital anônima e registra tudo num blockchain descentralizado.");
-
-        assertThat(cosine(query, page)).isGreaterThan(MIN_SCORE);
-    }
-
-    @Test
-    void unrelatedTextScoresBelowMinScore() {
-        float[] query = embed("receita de bolo de cenoura");
-        float[] page = embed("Mercado aceita moeda digital anônima e registra tudo num blockchain descentralizado.");
-
-        assertThat(cosine(query, page)).isLessThan(MIN_SCORE);
-    }
-
-    @Test
-    void distinctConceptsScoreBelowMinScore() {
-        assertThat(cosine(embed("criptomoedas"), embed("vazamento de senhas e credenciais"))).isLessThan(MIN_SCORE);
-    }
-
-    @Test
-    void vectorsAreUnitLength() {
-        float[] v = embed("bitcoin e outras coisas");
-        assertThat(cosine(v, v)).isCloseTo(1.0, org.assertj.core.data.Offset.offset(1e-5));
-        assertThat(cosine(embed(""), embed(""))).isCloseTo(1.0, org.assertj.core.data.Offset.offset(1e-5));
-    }
-
-    @Test
-    void batchEmbedAnswersOneVectorPerRequestInOrderIgnoringTheRolePrefix() throws Exception {
-        try (FakeAiProviders fakes = new FakeAiProviders()) {
-            String body = fakes.gemini.responder.apply("/models/gemini-embedding-2:batchEmbedContents", """
-                {"requests": [
-                  {"content": {"parts": [{"text": "task: search result | query: criptomoedas"}]}},
-                  {"content": {"parts": [{"text": "title: http://x.onion/ | text: vazamento de senhas"}]}}]}
-                """).body();
-
-            var embeddings = tools.jackson.databind.json.JsonMapper.builder().build().readTree(body).path("embeddings");
-            assertThat(embeddings.size()).isEqualTo(2);
-            assertThat(embeddings.get(0).path("values").size()).isEqualTo(FakeAiProviders.DIMENSIONS);
-            assertThat(embeddings.get(0).path("values").get(0).asDouble())
-                .isCloseTo(embed("criptomoedas")[0], org.assertj.core.data.Offset.offset(1e-6));
-            assertThat(FakeAiProviders.stripRole("title: http://x.onion/ | text: vazamento"))
-                .isEqualTo("vazamento");
-        }
-    }
 
     @Test
     void entityPromptReturnsOnlyTheKnownNamesPresentInTheText() throws Exception {

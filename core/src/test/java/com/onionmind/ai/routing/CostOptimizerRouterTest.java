@@ -7,7 +7,15 @@ import com.onionmind.ai.provider.CompletionRequest;
 import com.onionmind.ai.provider.CompletionResponse;
 import com.onionmind.ai.provider.ProviderQuota;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.springframework.boot.context.properties.bind.Bindable;
+import org.springframework.boot.context.properties.bind.Binder;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.env.StandardEnvironment;
+import org.springframework.core.io.ClassPathResource;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 
@@ -92,6 +100,25 @@ class CostOptimizerRouterTest {
 
     private TaskContext interactive() {
         return new TaskContext(TaskContext.TaskType.SUMMARIZE, 100, "en", false, true, null, 0);
+    }
+
+    /** .onion text only goes to approved providers: every shipped profile's ladder is DeepSeek alone (D7). */
+    @ParameterizedTest
+    @ValueSource(strings = {"", "prod", "sandbox"})
+    void defaultLadderOfEveryProfileHasOnlyDeepSeek(String profile) throws IOException {
+        var env = new StandardEnvironment();
+        var loader = new YamlPropertySourceLoader();
+        loader.load("app", new ClassPathResource("application.yml")).forEach(env.getPropertySources()::addLast);
+        if (!profile.isEmpty()) {
+            loader.load(profile, new ClassPathResource("application-" + profile + ".yml"))
+                .forEach(env.getPropertySources()::addFirst);
+        }
+        List<String> ladder = Binder.get(env).bind("ai.ladder", Bindable.listOf(String.class)).get();
+
+        CostOptimizerRouter router = new CostOptimizerRouter(List.of(
+            new FakeProvider("gemini", HAS_QUOTA), new FakeProvider("deepseek", ProviderQuota.UNLIMITED)), ladder, 5, 30);
+
+        assertThat(router.ladderFor(ctx(100))).extracting(AIProvider::id).containsExactly("deepseek");
     }
 
     /** Used to NPE: the old router fell back to a hardcoded local-provider bean that no longer exists. */

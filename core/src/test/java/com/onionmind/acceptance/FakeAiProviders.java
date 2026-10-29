@@ -13,28 +13,14 @@ import java.util.function.BiFunction;
 import java.util.regex.Pattern;
 
 /**
- * The only fakes in the acceptance suite: the external model endpoints (design D4) — Gemini
- * (generateContent and batchEmbedContents) and DeepSeek (chat/completions). Real adapters,
- * router, quota tracker, decorators and Qdrant talk to these over HTTP.
- *
- * <p>Generation answers are deterministic per task type. Embeddings are a bag of concepts:
- * terms from {@link #CONCEPTS} weigh heavily on their concept's axis, every other word lands
- * lightly on a hashed axis — so paraphrases of one concept are close, unrelated text is not.
- * The role prefix GeminiEmbedder adds is stripped first: it is the same on every text.
+ * The only fakes in the acceptance suite: the external generation endpoints (design D4) — Gemini
+ * (generateContent) and DeepSeek (chat/completions). Real adapters, router, quota tracker,
+ * decorators and Qdrant talk to these over HTTP. Answers are deterministic per task type.
+ * Embeddings are not faked: they come from the real local model (local-onnx-embeddings D8).
  */
 final class FakeAiProviders implements AutoCloseable {
 
-    static final int DIMENSIONS = 64;
-
-    private static final Map<String, List<String>> CONCEPTS = Map.of(
-        "cripto", List.of("bitcoin", "blockchain", "criptomoeda", "criptomoedas", "monero", "moeda", "moedas"),
-        "vazamento", List.of("vazamento", "vazamentos", "senhas", "credenciais", "dump"),
-        "documentos", List.of("passaporte", "passaportes", "documentos", "identidade", "falsificados"));
-    private static final List<String> AXES = List.copyOf(new java.util.TreeSet<>(CONCEPTS.keySet()));
-    private static final double CONCEPT_WEIGHT = 3.0;
-    private static final double WORD_WEIGHT = 0.3;
     private static final Pattern WORDS = Pattern.compile("\\p{L}+");
-    private static final Pattern ROLE_PREFIX = Pattern.compile("^(task: [^|]*\\| query: |title: [^|]*\\| text: )");
 
     private final ObjectMapper mapper = JsonMapper.builder().build();
 
@@ -49,12 +35,8 @@ final class FakeAiProviders implements AutoCloseable {
     FakeAiProviders() {
         deepseek.responder = (path, body) -> json(Map.of("choices",
             List.of(Map.of("message", Map.of("content", answer(body, "deepseek"))))));
-        gemini.responder = (path, body) -> path.endsWith(":batchEmbedContents")
-            ? json(Map.of("embeddings", mapper.readTree(body).path("requests").valueStream()
-                .map(r -> Map.of("values", toList(embed(stripRole(r.at("/content/parts/0/text").asString())))))
-                .toList()))
-            : json(Map.of("candidates",
-                List.of(Map.of("content", Map.of("parts", List.of(Map.of("text", answer(body, "gemini"))))))));
+        gemini.responder = (path, body) -> json(Map.of("candidates",
+            List.of(Map.of("content", Map.of("parts", List.of(Map.of("text", answer(body, "gemini"))))))));
         for (FakeHttpServer s : List.of(deepseek, gemini)) {
             answering.put(s, s.responder);
         }
@@ -76,11 +58,6 @@ final class FakeAiProviders implements AutoCloseable {
             s.requestPaths.clear();
             s.authHeaders.clear();
         }
-    }
-
-    /** Generation calls (not embeddings) the given fake received. */
-    static long generationCalls(FakeHttpServer server) {
-        return server.requestPaths.stream().filter(p -> !p.endsWith(":batchEmbedContents")).count();
     }
 
     /** Named entities the fake model "recognises" when they appear in the page text (Fase 4). */
@@ -185,53 +162,6 @@ final class FakeAiProviders implements AutoCloseable {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
-    }
-
-    static float[] embed(String text) {
-        double[] v = new double[DIMENSIONS];
-        var matcher = WORDS.matcher(text.toLowerCase(Locale.ROOT));
-        while (matcher.find()) {
-            String word = matcher.group();
-            int axis = conceptAxis(word);
-            if (axis >= 0) {
-                v[axis] += CONCEPT_WEIGHT;
-            } else {
-                v[AXES.size() + Math.floorMod(word.hashCode(), DIMENSIONS - AXES.size())] += WORD_WEIGHT;
-            }
-        }
-        double norm = 0;
-        for (double x : v) norm += x * x;
-        norm = Math.sqrt(norm);
-        float[] out = new float[DIMENSIONS];
-        if (norm == 0) {
-            out[DIMENSIONS - 1] = 1f; // empty text still needs a valid unit vector for cosine
-            return out;
-        }
-        for (int i = 0; i < DIMENSIONS; i++) out[i] = (float) (v[i] / norm);
-        return out;
-    }
-
-    static double cosine(float[] a, float[] b) {
-        double dot = 0;
-        for (int i = 0; i < a.length; i++) dot += a[i] * b[i];
-        return dot; // both unit vectors
-    }
-
-    private static int conceptAxis(String word) {
-        for (int i = 0; i < AXES.size(); i++) {
-            if (CONCEPTS.get(AXES.get(i)).contains(word)) return i;
-        }
-        return -1;
-    }
-
-    private static List<Float> toList(float[] v) {
-        Float[] boxed = new Float[v.length];
-        for (int i = 0; i < v.length; i++) boxed[i] = v[i];
-        return List.of(boxed);
-    }
-
-    static String stripRole(String text) {
-        return ROLE_PREFIX.matcher(text).replaceFirst("");
     }
 
     private Reply json(Object body) {

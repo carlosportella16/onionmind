@@ -33,7 +33,6 @@ class DefaultAIOrchestratorTest {
 
     private ScriptedProvider gemini;
     private ScriptedProvider deepseek;
-    private com.onionmind.ai.FakeHttpServer embedServer;
     private CacheDecorator cache;
     private DefaultAIOrchestrator orchestrator;
 
@@ -42,7 +41,6 @@ class DefaultAIOrchestratorTest {
         RedisTestSupport.flushAll();
         gemini = new ScriptedProvider("gemini");
         deepseek = new ScriptedProvider("deepseek");
-        embedServer = new com.onionmind.ai.FakeHttpServer();
 
         CostOptimizerRouter router = new CostOptimizerRouter(List.of(gemini, deepseek), List.of("gemini", "deepseek"), 5, 30);
         ProviderQuotaTracker tracker = new ProviderQuotaTracker(
@@ -55,7 +53,7 @@ class DefaultAIOrchestratorTest {
             new ValidationDecorator(),
             cache,
             new MetricsDecorator(new SimpleMeterRegistry(), tracker),
-            new GeminiEmbedder(embedServer.baseUrl(), "test-key", "gemini-embedding-2", 3, 100),
+            TestEmbeddingModel.SHARED,
             0.7, 2);
     }
 
@@ -191,23 +189,23 @@ class DefaultAIOrchestratorTest {
 
     @Test
     void embedDelegatesToTheEmbedderNotTheLadder() {
-        embedServer.responseBody = "{\"embeddings\":[{\"values\":[0.5,0.6,0.7]}]}";
-
         Embedding embedding = orchestrator.embed("texto", shortCtx());
 
-        assertThat(embedding.vector()).containsExactly(0.5f, 0.6f, 0.7f);
+        assertThat(embedding.vector()).hasSize(384);
+        assertThat(embedding.confidence()).isEqualTo(1.0);
         assertThat(gemini.calls()).isZero();
+        assertThat(deepseek.calls()).isZero();
     }
 
     @Test
-    void embedAllSendsOneBatchWithTheRoleFromTheContext() {
-        embedServer.responseBody = "{\"embeddings\":[{\"values\":[1,0,0]},{\"values\":[0,1,0]}]}";
-
-        List<Embedding> out = orchestrator.embedAll(List.of("a", "b"), "http://x.onion/",
+    void embedAllTakesTheRoleFromTheContext() {
+        List<Embedding> passages = orchestrator.embedAll(List.of("a", "b"), "http://x.onion/",
             TaskContext.batch(TaskContext.TaskType.EMBED, 1, null, false));
+        Embedding query = orchestrator.embed("a", interactive(TaskContext.TaskType.EMBED));
 
-        assertThat(out).extracting(e -> e.vector()[1]).containsExactly(0f, 1f);
-        assertThat(embedServer.requestBodies).singleElement().asString().contains("title: http://x.onion/ | text: a");
+        assertThat(passages).hasSize(2);
+        assertThat(passages.getFirst().vector()).isNotEqualTo(passages.get(1).vector());
+        assertThat(query.vector()).isNotEqualTo(passages.getFirst().vector());
     }
 
     @Test
@@ -448,7 +446,7 @@ class DefaultAIOrchestratorTest {
             new ValidationDecorator(),
             cache,
             new MetricsDecorator(new SimpleMeterRegistry(), tracker),
-            new GeminiEmbedder(embedServer.baseUrl(), "test-key", "gemini-embedding-2", 3, 100),
+            TestEmbeddingModel.SHARED,
             0.7, 2);
     }
 

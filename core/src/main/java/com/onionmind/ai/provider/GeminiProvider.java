@@ -60,24 +60,4 @@ public class GeminiProvider extends HttpAIProvider {
         JsonNode tokens = root.path("usageMetadata").path("totalTokenCount");
         return new CompletionResponse(text, tokens.isNumber() ? tokens.asInt() : null);
     }
-
-    /**
-     * A 429 lists the quotas it hit in {@code error.details[].violations[].quotaId}, e.g.
-     * {@code GenerateRequestsPerDayPerProjectPerModel}: any per-day id parks until the quota day ends.
-     */
-    @Override
-    protected ProviderException.Quota quotaOf429(String body) {
-        try {
-            for (JsonNode detail : mapper.readTree(body).path("error").path("details")) {
-                for (JsonNode violation : detail.path("violations")) {
-                    if (violation.path("quotaId").asString("").contains("PerDay")) {
-                        return ProviderException.Quota.DAY;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            // unparseable 429 body: fall back to the shortest park
-        }
-        return ProviderException.Quota.MINUTE;
-    }
 }

@@ -15,7 +15,7 @@ Funcionalidade: Fase 5 — chat sobre a base
     E as fontes do chat contêm a página "http://passaportes.onion/"
 
   Cenário: Base sem a resposta
-    Dado que a página "http://mercado-anonimo.onion/" foi publicada com o texto "Mercado aceita moeda digital anônima e registra tudo num blockchain descentralizado."
+    Dado que a página "http://mercado-anonimo.onion/" foi publicada com o texto "Marketplace that accepts anonymous digital money and records every sale on a decentralized blockchain."
     E que o ciclo de enriquecimento rodou
     Quando eu pergunto ao chat "onde comprar criptomoedas baratas?"
     Então os resultados contêm a página "http://mercado-anonimo.onion/"

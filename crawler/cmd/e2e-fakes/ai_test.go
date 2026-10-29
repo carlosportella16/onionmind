@@ -2,39 +2,11 @@ package main
 
 import (
 	"encoding/json"
-	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
-
-func cosine(a, b []float64) float64 {
-	var dot float64
-	for i := range a {
-		dot += a[i] * b[i]
-	}
-	return dot // unit vectors
-}
-
-func TestEmbedSeparatesConceptsAroundTheCoreMinScore(t *testing.T) {
-	const minScore = 0.45 // core application.yml embedding.min-score
-	query := embed("criptomoedas")
-	page := embed(pages["conceito-e2e.onion"])
-
-	if got := cosine(query, page); got <= minScore {
-		t.Errorf("paraphrase should clear min-score, got %.3f", got)
-	}
-	if got := cosine(embed("receita de bolo de cenoura"), page); got >= minScore {
-		t.Errorf("unrelated text should stay below min-score, got %.3f", got)
-	}
-	if got := cosine(query, query); math.Abs(got-1) > 1e-9 {
-		t.Errorf("vectors must be unit length, got %.6f", got)
-	}
-	if got := len(embed("")); got != dimensions {
-		t.Errorf("empty text vector has %d dims, want %d", got, dimensions)
-	}
-}
 
 func post(t *testing.T, url, body string, out any) int {
 	t.Helper()
@@ -47,32 +19,6 @@ func post(t *testing.T, url, body string, out any) int {
 		_ = json.NewDecoder(resp.Body).Decode(out)
 	}
 	return resp.StatusCode
-}
-
-func TestGeminiEmbedEndpointsStripTheRolePrefixAndKeepOrder(t *testing.T) {
-	srv := httptest.NewServer(aiHandler())
-	defer srv.Close()
-
-	var batch struct{ Embeddings []struct{ Values []float64 } }
-	post(t, srv.URL+"/v1beta/models/gemini-embedding-2:batchEmbedContents", `{"requests":[
-		{"model":"models/gemini-embedding-2","content":{"parts":[{"text":"task: search result | query: criptomoedas"}]}},
-		{"model":"models/gemini-embedding-2","content":{"parts":[{"text":"title: http://x.onion/ | text: senhas"}]}}]}`, &batch)
-	if len(batch.Embeddings) != 2 || len(batch.Embeddings[0].Values) != dimensions {
-		t.Fatalf("unexpected batch response %v", batch)
-	}
-	if got := cosine(batch.Embeddings[0].Values, embed("criptomoedas")); math.Abs(got-1) > 1e-9 {
-		t.Errorf("query prefix should be ignored, cosine to the bare text = %.6f", got)
-	}
-	if got := cosine(batch.Embeddings[1].Values, embed("senhas")); math.Abs(got-1) > 1e-9 {
-		t.Errorf("document prefix should be ignored, cosine to the bare text = %.6f", got)
-	}
-
-	var single struct{ Embedding struct{ Values []float64 } }
-	post(t, srv.URL+"/v1beta/models/gemini-embedding-2:embedContent",
-		`{"content":{"parts":[{"text":"task: search result | query: bitcoin"}]}}`, &single)
-	if len(single.Embedding.Values) != dimensions {
-		t.Fatalf("unexpected embedContent response %v", single)
-	}
 }
 
 func TestGenerationEndpointsAnswerEachTaskInJSON(t *testing.T) {
@@ -118,8 +64,10 @@ func TestGenerationEndpointsAnswerEachTaskInJSON(t *testing.T) {
 	if code := post(t, srv.URL+"/chat/completions", `not json`, nil); code != http.StatusBadRequest {
 		t.Errorf("malformed request should be 400, got %d", code)
 	}
-	if code := post(t, srv.URL+"/v1beta/models/x:countTokens", `{}`, nil); code != http.StatusNotFound {
-		t.Errorf("unknown Gemini call should be 404, got %d", code)
+	for _, call := range []string{"x:countTokens", "gemini-embedding-2:batchEmbedContents"} {
+		if code := post(t, srv.URL+"/v1beta/models/"+call, `{}`, nil); code != http.StatusNotFound {
+			t.Errorf("%s should be 404 (embeddings are local now), got %d", call, code)
+		}
 	}
 }
 

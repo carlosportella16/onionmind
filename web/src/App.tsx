@@ -47,16 +47,14 @@ function App() {
       </header>
 
       <main>
-        {tab === 'search' ? (
+        {tab === 'search' && (
           <>
             <SearchBar onSearch={handleSearch} />
             <ResultList results={results} total={total} hasSearched={hasSearched} />
           </>
-        ) : tab === 'chat' ? (
-          <Chat />
-        ) : (
-          <Agents />
         )}
+        {tab === 'chat' && <Chat />}
+        {tab === 'agents' && <Agents />}
       </main>
     </div>
   );

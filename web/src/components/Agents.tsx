@@ -129,7 +129,7 @@ export function Agents() {
         className="agent-form"
         onSubmit={(e) => {
           e.preventDefault();
-          save();
+          void save();
         }}
       >
         {field(

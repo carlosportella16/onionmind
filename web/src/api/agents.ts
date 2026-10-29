@@ -65,6 +65,13 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return res.status === 204 ? (undefined as T) : res.json();
 }
 
+// Ids come back from the API; only a whole number goes into a path.
+function agentPath(id: number): string {
+  const n = Number(id);
+  if (!Number.isSafeInteger(n)) throw new Error(`invalid agent id: ${id}`);
+  return `/api/agents/${n}`;
+}
+
 export function listAgents(): Promise<Agent[]> {
   return call('/api/agents');
 }
@@ -72,19 +79,19 @@ export function listAgents(): Promise<Agent[]> {
 export function saveAgent(agent: Agent): Promise<Agent> {
   return agent.id === undefined
     ? call('/api/agents', { method: 'POST', body: JSON.stringify(agent) })
-    : call(`/api/agents/${encodeURIComponent(agent.id)}`, { method: 'PUT', body: JSON.stringify(agent) });
+    : call(agentPath(agent.id), { method: 'PUT', body: JSON.stringify(agent) });
 }
 
 export function deleteAgent(id: number): Promise<void> {
-  return call(`/api/agents/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  return call(agentPath(id), { method: 'DELETE' });
 }
 
 // Synchronous: resolves when the run ends, up to the cost profile's deadline (20 s or 60 s).
 export function runAgent(id: number): Promise<AgentRun> {
-  return call(`/api/agents/${encodeURIComponent(id)}/runs`, { method: 'POST' });
+  return call(`${agentPath(id)}/runs`, { method: 'POST' });
 }
 
 // Newest first.
 export function listRuns(id: number): Promise<AgentRun[]> {
-  return call(`/api/agents/${encodeURIComponent(id)}/runs`);
+  return call(`${agentPath(id)}/runs`);
 }

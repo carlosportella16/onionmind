@@ -29,8 +29,8 @@ class SchedulingPoolSizeTest {
 
     @Test
     void everyScheduledJobGetsItsOwnThread() throws InterruptedException {
-        // AiEnrichmentBackfillJob, EmbeddingBackfillJob, ChangeSummaryJob, EventResubmissionJob.
-        int jobs = 4;
+        // AiEnrichmentBackfillJob, EmbeddingBackfillJob, ChangeSummaryJob, EventResubmissionJob, DailyAgentJob.
+        int jobs = 5;
         CountDownLatch allStarted = new CountDownLatch(jobs);
         CountDownLatch release = new CountDownLatch(1);
 

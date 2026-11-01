@@ -254,7 +254,7 @@ class ChangeDetectionIntegrationTest {
         insertChange(m, "http://market.onion/", "marketplace", "pending", "2026-10-21T09:00:00Z", null);
         insertChange(old, "http://old.onion/", "forum", "summarized", "2026-10-19T09:00:00Z", "Antigo.");
         MockMvc mvc = MockMvcBuilders.standaloneSetup(
-            new ChangesController(jdbc, Clock.fixed(now, ZoneOffset.UTC))).build();
+            new ChangesController(new ChangeQuery(jdbc), Clock.fixed(now, ZoneOffset.UTC))).build();
 
         mvc.perform(get("/api/changes").param("category", "forum").param("since", "2026-10-20T12:00:00Z"))
             .andExpect(status().isOk())

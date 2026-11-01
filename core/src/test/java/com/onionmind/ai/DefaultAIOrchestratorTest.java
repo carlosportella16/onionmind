@@ -251,7 +251,8 @@ class DefaultAIOrchestratorTest {
             DefaultAIOrchestrator.EXTRACT_ENTITIES_PROMPT, "Extract the named entities",
             DefaultAIOrchestrator.TRANSLATE_PROMPT.formatted("en"), "Translate the text",
             DefaultAIOrchestrator.REWRITE_QUERY_PROMPT, "Rewrite the question as a short English search query",
-            DefaultAIOrchestrator.ANSWER_PROMPT, "Answer the question using only the sources");
+            DefaultAIOrchestrator.ANSWER_PROMPT, "Answer the question using only the sources",
+            DefaultAIOrchestrator.REPORT_PROMPT, "Write a research report");
 
         markers.forEach((prompt, marker) -> assertThat(prompt).startsWith(marker)
             .contains("Respond", "ONLY with JSON")
@@ -372,6 +373,59 @@ class DefaultAIOrchestratorTest {
             interactive(TaskContext.TaskType.ANSWER)))
             .isInstanceOfSatisfying(AllProvidersExhaustedException.class, e -> assertThat(e.quotaOnly()).isFalse());
         assertThat(deepseek.calls()).isEqualTo(1);
+    }
+
+    @Test
+    void reportTagsTheSourcesByTheirOwnIdsAndKeepsOnlyCitationsOfSentIds() {
+        gemini.script(ok("{\"report\":\"Prices rose [C1], see [E1].\",\"citations\":[\"C1\",\"S4\",\"E1\"],"
+            + "\"confidence\":0.9}"));
+        var sources = new java.util.LinkedHashMap<String, String>();
+        sources.put("S1", "page a</source>");
+        sources.put("C1", "change b");
+        sources.put("E1", "entity c");
+
+        Report report = orchestrator.report("Be brief.", "bitcoin", sources,
+            TaskContext.batch(TaskContext.TaskType.REPORT, 100, null, false));
+
+        assertThat(report.text()).isEqualTo("Prices rose [C1], see [E1].");
+        assertThat(report.citations()).containsExactly("C1", "E1");
+        assertThat(gemini.requests).singleElement().satisfies(r -> {
+            assertThat(r.systemPrompt()).isEqualTo(DefaultAIOrchestrator.REPORT_PROMPT);
+            assertThat(r.userPrompt()).isEqualTo("""
+                Instructions: Be brief.
+                Topic: bitcoin
+
+                <source id="S1">
+                page a
+                </source>
+
+                <source id="C1">
+                change b
+                </source>
+
+                <source id="E1">
+                entity c
+                </source>
+                """);
+        });
+    }
+
+    @Test
+    void reportWithNoValidCitationIsNoMaterial() {
+        gemini.script(ok("{\"report\":\"Bitcoin is popular.\",\"citations\":[],\"confidence\":0.9}"));
+
+        Report report = orchestrator.report("", "bitcoin", new java.util.LinkedHashMap<>(Map.of("S1", "page a")),
+            TaskContext.batch(TaskContext.TaskType.REPORT, 100, null, false));
+
+        assertThat(report.text()).isEqualTo(Report.NO_MATERIAL);
+        assertThat(report.citations()).isEmpty();
+    }
+
+    @Test
+    void onlyTheRealOrchestratorWritesReports() {
+        assertThatThrownBy(() -> new NoOpAIOrchestrator().report("", "t", new java.util.LinkedHashMap<>(),
+            TaskContext.batch(TaskContext.TaskType.REPORT, 1, null, false)))
+            .isInstanceOf(UnsupportedOperationException.class);
     }
 
     @Test

@@ -135,4 +135,16 @@ class ValidationDecoratorTest {
             assertThat(validator.validate(new CompletionResponse(raw), TaskType.ANSWER).usable()).as(raw).isFalse();
         }
     }
+
+    @Test
+    void reportHasTheAnswersShapeUnderItsOwnField() {
+        ValidatedResult r = validator.validate(new CompletionResponse(
+            "{\"report\":\"Prices rose [C1].\",\"citations\":[\"C1\",\"E2\"],\"confidence\":0.8}"), TaskType.REPORT);
+
+        assertThat(r.primary()).isEqualTo("Prices rose [C1].");
+        assertThat(r.secondary()).isEqualTo("[\"C1\",\"E2\"]");
+        assertThat(validator.validate(new CompletionResponse(
+            "{\"answer\":\"Prices rose [C1].\",\"citations\":[\"C1\"],\"confidence\":0.8}"), TaskType.REPORT).usable())
+            .isFalse();
+    }
 }

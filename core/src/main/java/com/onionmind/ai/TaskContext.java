@@ -5,7 +5,7 @@ public record TaskContext(
     boolean critical, boolean interactive, Double previousConfidence, int attemptNumber
 ) {
     public enum TaskType {
-        SUMMARIZE, CLASSIFY, TRANSLATE, DETECT_LANGUAGE, EXTRACT_ENTITIES, EMBED, REWRITE_QUERY, ANSWER
+        SUMMARIZE, CLASSIFY, TRANSLATE, DETECT_LANGUAGE, EXTRACT_ENTITIES, EMBED, REWRITE_QUERY, ANSWER, REPORT
     }
 
     /** Batch (non-interactive) context — the only kind Fase 3 produces. */

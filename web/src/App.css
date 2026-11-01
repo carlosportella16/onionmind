@@ -302,6 +302,78 @@ main {
   white-space: pre-wrap;
 }
 
+/* --- agents --- */
+
+.agent-list {
+  margin-left: 0;
+  flex-wrap: wrap;
+}
+
+.agent-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.agent-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.agent-field input:not([type='checkbox']),
+.agent-field textarea,
+.agent-field select {
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: var(--text-bright);
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 10px;
+}
+
+.agent-field :focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.agent-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: var(--text);
+}
+
+.agent-error {
+  color: oklch(70% 0.18 25);
+}
+
+.agent-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.agent-actions button {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: var(--bg);
+  background: var(--accent);
+  border: none;
+  border-radius: 2px;
+  padding: 9px 16px;
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.agent-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .chat-degraded {
   margin: 0;
   font-size: 13px;

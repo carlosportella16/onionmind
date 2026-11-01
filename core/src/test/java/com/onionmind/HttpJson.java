@@ -13,7 +13,8 @@ import java.time.Duration;
 
 /**
  * HTTP helper shared by the acceptance and smoke glue: GET, plus POST for {@code /api/chat},
- * which reads only. {@code json} is null for non-JSON bodies.
+ * which reads only, and POST/DELETE for the agents (acceptance only). {@code json} is null for
+ * non-JSON bodies.
  */
 public record HttpJson(int status, String body, JsonNode json) {
 
@@ -31,6 +32,10 @@ public record HttpJson(int status, String body, JsonNode json) {
         return send(HttpRequest.newBuilder(URI.create(url))
             .header("Content-Type", "application/json")
             .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(body))), "POST " + url);
+    }
+
+    public static HttpJson delete(String url) {
+        return send(HttpRequest.newBuilder(URI.create(url)).DELETE(), "DELETE " + url);
     }
 
     private static HttpJson send(HttpRequest.Builder request, String what) {

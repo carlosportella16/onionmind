@@ -131,6 +131,17 @@ class GraphRepositoryIntegrationTest {
     }
 
     @Test
+    void mostMentionedInRanksEntitiesByHowManyOfThePagesCiteThem() {
+        graph.project(page("http://a.onion/1", 1, WALLET, ANA, MONERO));
+        graph.project(page("http://b.onion/1", 1, WALLET, ANA));
+        graph.project(page("http://c.onion/1", 1, BIA));
+
+        assertThat(graph.mostMentionedIn(List.of("http://a.onion/1", "http://b.onion/1"), 2))
+            .containsExactly(WALLET.id(), ANA.id()); // tied at 2 pages: by id
+        assertThat(graph.mostMentionedIn(List.of("http://nowhere.onion/"), 5)).isEmpty();
+    }
+
+    @Test
     void cypherInKeyIsJustALiteral() {
         graph.project(page("http://a.onion/1", 1, ANA));
         var before = counts();

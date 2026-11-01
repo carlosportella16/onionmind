@@ -10,6 +10,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Repository;
 
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -150,6 +151,23 @@ public class GraphRepository {
                 return Optional.of(new EntityView(r.get("type").asString(), r.get("key").asString(),
                     r.get("display").asString(), pages, related));
             });
+        }
+    }
+
+    /**
+     * Ids of the entities mentioned by the most of {@code urls}, ties by id — the agents'
+     * {@code entities} tool asks this of the pages it found for a topic, then {@link #find} each.
+     */
+    public List<String> mostMentionedIn(Collection<String> urls, int limit) {
+        try (var session = driver.session()) {
+            return session.executeRead(tx -> tx.run("""
+                MATCH (p:Page)-[:MENTIONS]->(e:Entity)
+                WHERE p.url IN $urls
+                WITH e, count(DISTINCT p) AS pages
+                RETURN e.id AS id
+                ORDER BY pages DESC, e.id
+                LIMIT $limit
+                """, Map.of("urls", List.copyOf(urls), "limit", limit)).list(r -> r.get("id").asString()));
         }
     }
 

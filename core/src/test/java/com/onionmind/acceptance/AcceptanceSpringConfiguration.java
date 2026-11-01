@@ -12,8 +12,9 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.neo4j.Neo4jContainer;
 
 /**
- * One Spring context for every acceptance scenario (design D3): Fases 1-4 all switched on,
- * real Postgres/Kafka/Redis/Qdrant/Neo4j, and only the model endpoints faked (D4). Backfill
+ * One Spring context for every acceptance scenario (design D3): Fases 1-5 all switched on,
+ * real Postgres/Kafka/Redis/Qdrant/Neo4j and the real local embedding model, and only the
+ * generation endpoints faked (D4). Backfill
  * schedules are pushed out of the way — scenarios trigger them explicitly (D6).
  */
 @CucumberContextConfiguration
@@ -28,14 +29,16 @@ import org.testcontainers.neo4j.Neo4jContainer;
     "chat.answer-timeout=2s",
     "ai.openai-compatible.deepseek.api-key=acceptance-test-key",
     "ai.gemini.api-key=acceptance-test-key",
+    // The shipped ladder is DeepSeek alone; the Fase 3 scenarios still exercise a two-rung ladder
+    // (a parked first rung falling to the second), which is how Gemini comes back with billing.
+    "ai.ladder=gemini,deepseek",
     // Scenarios must not depend on the real tier's ceilings in application.yml: at the free
     // tier's 15 RPM a multi-page scenario spills to DeepSeek depending on the runner's speed.
     "ai.providers.gemini.requests-per-minute=1000",
     "ai.providers.gemini.requests-per-day=100000",
     "ai.providers.gemini.tokens-per-minute=10000000",
-    "embedding.dimensions=" + FakeAiProviders.DIMENSIONS,
-    // ~100 chars per chunk, so a page with a few hundred chars spans several chunks
-    "embedding.chunk-size=25",
+    // ~200 chars per chunk: a one-sentence page is one chunk, the link list spans several
+    "embedding.chunk-size=50",
     "illegal-content.url-denylist-path=classpath:acceptance/onion-denylist.txt",
     "illegal-content.text-pattern-path=classpath:acceptance/illegal-text-patterns.txt",
 })

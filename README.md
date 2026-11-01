@@ -2,7 +2,7 @@
 
 > AI-powered Knowledge Discovery Platform for the Tor Network.
 
-**Current Phase:** Phase 3 validated end-to-end (2026-09-06) — real generation pipeline (summarize / classify / detect language) with a multi-provider `AIOrchestrator` (Ollama, Groq, Gemini), an AI Cost Optimizer, an illegal-content guard, and enrichment surfaced in search, all proven against live Groq + Gemini + Ollama (see `docs/onionmind-fase3-sdd.md` §11.4 / §12). Phase 2's exit gate has also been re-run against live Ollama + Qdrant and its `min-score` recalibrated from real corpus data (§P2-1/P2-2). Since `replace-ollama-with-gemini-deepseek` (2026-10-24) the providers are paid Gemini + DeepSeek and there is no local model — see [AI providers](#ai-providers-privacy-and-quota).
+**Current Phase:** Phase 3 validated end-to-end (2026-09-06) — real generation pipeline (summarize / classify / detect language) with a multi-provider `AIOrchestrator` (Ollama, Groq, Gemini), an AI Cost Optimizer, an illegal-content guard, and enrichment surfaced in search, all proven against live Groq + Gemini + Ollama (see `docs/onionmind-fase3-sdd.md` §11.4 / §12). Phase 2's exit gate has also been re-run against live Ollama + Qdrant and its `min-score` recalibrated from real corpus data (§P2-1/P2-2). Since `local-onnx-embeddings` (2026-10-25) generation goes only to DeepSeek and embeddings are made inside the core by a local ONNX model — see [AI providers](#ai-providers-privacy-and-quota).
 
 **Tech Stack:** Go (crawler) • Java 25 (Spring Boot 4.1 + Spring Modulith) • PostgreSQL • Redpanda • React
 
@@ -17,7 +17,7 @@ OnionMind discovers, crawls, indexes, and analyzes `.onion` content, transformin
 Most Tor search engines are link lists without ranking or context. OnionMind changes that:
 - **Continuous Discovery:** Go crawler autonomously finds new pages via Tor
 - **Intelligent Indexing:** Full-text search (PostgreSQL), semantic search (Qdrant), knowledge graph (Neo4j)
-- **Cheap AI:** Summaries, classification, entity extraction and embeddings through paid, capped cloud providers (Gemini 2.5 Flash-Lite, DeepSeek) — no local model to host
+- **Cheap AI:** Summaries, classification and entity extraction through a prepaid cloud provider (DeepSeek); embeddings from a small model the core runs in-process (`multilingual-e5-small`, ONNX) — no AI service to host
 - **Incremental Delivery:** Each phase ships a working product — no phase exists just for infrastructure
 
 ---
@@ -83,7 +83,7 @@ Ships a functional Tor search engine without AI:
 Adds LLM-generated understanding without coupling to one provider:
 - **`AIOrchestrator`:** one interface (`summarize` / `classify` / `translate` / `detectLanguage` / `extractEntities` / `embed`); a decorator chain (metrics → cache → retry → validation) with a provider-escalation loop that switches provider on a low-confidence answer and returns the best result rather than throwing.
 - **Two cloud adapters:** `GeminiProvider` (`gemini-3.5-flash-lite`, system prompt in `systemInstruction`, JSON output, thinking at its `minimal` level) and `OpenAiCompatibleProvider` — one bean per `ai.openai-compatible.<id>`, today DeepSeek (`deepseek-flash`, JSON mode, thinking off). Missing API key → the provider reports zero quota and is skipped.
-- **AI Cost Optimizer:** one ladder, `ai.ladder: gemini,deepseek`, for every task — cheapest first, falling to the next rung when a provider is out of quota or answers with low confidence. `ProviderQuotaTracker` counts daily and per-minute requests in Redis against `ai.providers.<id>`; DeepSeek has no entry there, so only its prepaid balance gates it.
+- **AI Cost Optimizer:** one ladder, `ai.ladder` (today just `deepseek`; `gemini,deepseek` once a billed Gemini key exists), for every task — cheapest first, falling to the next rung when a provider is out of quota or answers with low confidence. `ProviderQuotaTracker` counts daily and per-minute requests in Redis against `ai.providers.<id>`; DeepSeek has no entry there, so only its prepaid balance gates it.
 - **Enrichment processors** (`ContentProcessor`, order 10–40): language detection (local stopword heuristic, escalates to the LLM when ambiguous), 2–3 sentence summary of the original text, fixed-taxonomy classification. Each skips work when `content_hash` is unchanged. Pages are not translated (removed in `remove-page-translation`: no API read it, and it was the largest call); `translate` stays on `AIOrchestrator` for the bilingual-search backlog.
 - **English output:** every prompt is in English and every LLM-generated text — page summary, change summary — comes out in English, whatever the page language. Category and entity-type codes are fixed identifiers. Summaries written in Portuguese before this change stay until the page changes; to standardize the corpus, re-queue it in batches, e.g. `UPDATE pages SET ai_status = 'pending' WHERE id IN (SELECT id FROM pages WHERE ai_status = 'processed' AND language->>'code' = 'pt' ORDER BY id LIMIT 200);` — each page spends LLM quota again.
 - **Illegal-content guard** (order 5, before any model): URL/host denylist + audited text patterns; a match halts the pipeline, records an audit row and persists no content. Perceptual image hashing is a documented gap (no images are stored).
@@ -95,25 +95,44 @@ Enable it with `ai.enabled=true` and the two API keys (below). With it off, the 
 
 ### AI providers, privacy and quota
 
-Since `replace-ollama-with-gemini-deepseek` (2026-10-24) there is no local model and no Groq: Ollama is gone from the compose file, and Groq from the ladder.
+Since `replace-ollama-with-gemini-deepseek` (2026-10-24) there is no AI service in the compose file, and since `local-onnx-embeddings` (2026-10-25) DeepSeek is the only provider text is sent to.
 
 - **Providers:**
-  - generation: `gemini-3.5-flash-lite` first (`gemini-2.5-flash-lite` is closed to new users since 2026-10), `deepseek-flash` as the last rung;
-  - embeddings: `gemini-embedding-2` at 768 dimensions, batched (`batchEmbedContents`), with query/document role prefixes and only the first `embedding.max-chars-per-page` (50 000) characters of a page. DeepSeek has no embeddings API.
-- **Keys:** `GEMINI_API_KEY` (generation and embeddings; required whenever `embedding.enabled=true`) and `DEEPSEEK_API_KEY`. Both are paid.
-- **Privacy decision (2026-10-24):** `.onion` page text is sent to **Google (Gemini, paid tier)** and to **DeepSeek (China)**. The Gemini key must belong to a project **with billing**: the free tier may use the content to improve Google's products and show it to human reviewers, and it is not approved for this content. The prompts and every generated text are in English.
+  - generation: `deepseek-flash`, the only rung of `ai.ladder`. The Gemini adapter and `ai.gemini.*` stay in the code, with `ai.providers.gemini` commented out: Gemini goes back to the front of the ladder (`gemini,deepseek`) only with a key of a project **with billing**;
+  - embeddings: made inside the core, with no API call — `multilingual-e5-small` (int8 ONNX, 384 dimensions, SentencePiece tokenizer) run by ONNX Runtime, with `query: ` / `passage: ` role prefixes and only the first `embedding.max-chars-per-page` (50 000) characters of a page. DeepSeek has no embeddings API.
+- **Keys:** only `DEEPSEEK_API_KEY` (prepaid). `GEMINI_API_KEY` is no longer needed.
+- **Privacy decision:** `.onion` page text is sent only to **DeepSeek (China)**. It never goes to a free tier: the only Gemini key at hand (2026-10-25) is on Google's free tier, which may use the content to improve Google's products and show it to human reviewers. Embedding a page or a query keeps the text on the machine. The prompts and every generated text are in English.
+- **Local embedding model:** `./scripts/fetch-embedding-model.sh [dir]` downloads `model_quantized.onnx` and `sentencepiece.bpe.model` from URLs pinned to a Hugging Face revision and checks their sha256 (a mismatch deletes the file and fails). The core reads them from `embedding.model-dir` (env `EMBEDDING_MODEL_DIR`, default `~/.cache/onionmind/models/multilingual-e5-small`) and refuses to boot with `embedding.enabled=true` when one is missing. Inference uses `embedding.threads` (2) threads, one chunk at a time, so a search query waits for at most one chunk of a page being embedded. Chunks past the model's 512 tokens are cut and counted in `embedding_truncated_chunks_total`; `embedding.chunk-size` (300 estimated tokens) keeps that under 10% of the dev corpus.
 - **No quota is not a failure:** when no provider has quota or balance, the enrichment backfill and the change-summary job leave the item queued without spending `ai_attempts` / `attempts`, and stop that run.
-- **Token budget (`ai-token-quota`):** providers cut on tokens per minute long before requests, so `ai.providers.<id>` takes `requests-per-minute`, `requests-per-day`, `tokens-per-minute` and `tokens-per-day` (a ceiling left out is not tracked). Every call adds the tokens the provider reported (`usageMetadata.totalTokenCount` / `usage.total_tokens`), or chars/4 when it reports none, to `quota:<id>:tokens:minute:*` and `quota:<id>:tokens:day:*`. A provider is only picked if the prompt's estimated tokens (chars/4) fit what is left.
-- **Interactive reserve:** batch tasks (enrichment, change summaries) read each budget with `ai.interactive-reserve-percent` (30) added to `ai.safety-margin-percent` (5), so the last 35% stays free for interactive tasks such as the Phase 5 chat, which only keep the 5% margin.
-- **Config migration:** the old `ai.groq.daily-limit` / `ai.groq.minute-limit` (and the Gemini pair) are gone; use `ai.providers.<id>.requests-per-day` / `requests-per-minute`, plus the token ceilings.
-- **Parking:** a provider that hits a limit is parked in Redis at `quota:<id>:parked`:
+- **Token budget (`ai-token-quota`):** providers cut on tokens per minute long before requests, so `ai.providers.<id>` takes `requests-per-minute`, `requests-per-day`, `tokens-per-minute` and `tokens-per-day` (a ceiling left out is not tracked; DeepSeek has none, its prepaid balance is the cap). Every call adds the tokens the provider reported (`usageMetadata.totalTokenCount` / `usage.total_tokens`), or chars/4 when it reports none, to `quota:<id>:tokens:minute:*` and `quota:<id>:tokens:day:*`. A provider is only picked if the prompt's estimated tokens (chars/4) fit what is left.
+- **Interactive reserve:** batch tasks (enrichment, change summaries) read each budget with `ai.interactive-reserve-percent` (30) added to `ai.safety-margin-percent` (5), so the last 35% stays free for interactive tasks such as the Phase 5 chat. It only applies to a provider with ceilings, so not to DeepSeek.
+- **Config migration:** the old `ai.groq.daily-limit` / `ai.groq.minute-limit` (and the Gemini pair) are gone; use `ai.providers.<id>.requests-per-day` / `requests-per-minute`, plus the token ceilings. `embedding.request-batch-size` is gone too.
+- **Parking:** a provider that hits a limit is parked in Redis at `quota:<id>:parked`. A 429 lists its quota ids in the log (`quotaId=...`, read from Google's `error.details[].violations[].quotaId`):
   - a 429 per minute parks it until the minute ends;
-  - a Gemini 429 on a per-day quota parks it until midnight Pacific, when Google resets it;
-  - a DeepSeek **402 (out of balance)** parks it with no TTL and logs a warning. Top up the balance, then release it with a restart or by hand: `redis-cli DEL quota:deepseek:parked`.
-- **Vector collection migration:** embeddings now go to a new Qdrant collection, `page_chunks_v2` (`qdrant.collection`). Every point stores its `model` and the chunk `text`, a point of another model never counts as "unchanged", and the core refuses to boot if the configured collection exists with another dimension. To re-embed the corpus:
-  1. run `UPDATE pages SET embedding_status = 'pending';` and let the embedding backfill run;
-  2. recalibrate `embedding.min-score` (the 0.45 in `application.yml` is nomic-embed-text's);
-  3. delete the old `page_chunks` collection by hand once the new one is validated (`curl -X DELETE http://localhost:6333/collections/page_chunks`), along with the old `ollama_data` volume (`docker volume rm onionmind_ollama_data`).
+  - a 429 on a per-day quota parks it until midnight Pacific, when Google resets it;
+  - a 429 whose `quotaId` contains `FreeTier` parks it **until released** and logs an error: a free-tier key must never get `.onion` text;
+  - a DeepSeek **402 (out of balance)** parks it until released too and logs a warning. Top up the balance (or replace the key), then release it with a restart or by hand: `redis-cli DEL quota:deepseek:parked`.
+- **Vector collection migration:** embeddings now go to a new Qdrant collection, `page_chunks_v3` (`qdrant.collection`, 384 dimensions). Every point stores its `model` and the chunk `text`, a point of another model never counts as "unchanged", and the core refuses to boot if the configured collection exists with another dimension. To re-embed the corpus:
+  1. run `./scripts/fetch-embedding-model.sh`, then `UPDATE pages SET embedding_status = 'pending';` and let the embedding backfill run (the 579-page dev corpus took under 2 minutes);
+  2. once the new collection is validated, delete the old ones by hand: `curl -X DELETE http://localhost:6333/collections/page_chunks_v2` (Gemini, 768 dimensions) and, if still there, `curl -X DELETE http://localhost:6333/collections/page_chunks` (nomic-embed-text), along with the old `ollama_data` volume (`docker volume rm onionmind_ollama_data`).
+  - Rollback: `qdrant.collection: page_chunks_v2`, `embedding.dimensions: 768` and the previous commit; the v2 collection stays until deleted, and Gemini embeddings need a paid key.
+
+### VPS sizing
+
+Target: 4 vCPU, 8 GB RAM, 100 GB SSD, everything on one host (`local-onnx-embeddings` D9).
+
+| Service | Memory | Setting |
+|---|---|---|
+| core | ~0.9 GB RSS measured during a full re-embed (heap + ~400 MB native for ONNX Runtime) | `-Xmx768m`, container `mem_limit: 2g` (native memory is outside `-Xmx`), `embedding.threads: 2` |
+| Neo4j | ~0.8 GB | `NEO4J_server_memory_heap_max__size=512m`, `NEO4J_server_memory_pagecache_size=256m` (in `docker-compose.yml`, dev too) |
+| Postgres | ~0.2–0.5 GB | defaults |
+| Qdrant | ~0.4 GB | defaults |
+| Redpanda | ~0.5 GB | `--memory=512M` |
+| Redis | ≤ 128 MB | `--maxmemory 128mb` |
+| Tor + crawler | ~0.2 GB | — |
+| `redpanda-console` | — | profile `tools`, not started on the VPS |
+
+That is ~4–4.5 GB in total, leaving ~3.5 GB for the OS and page cache; add 2 GB of swap as a safety net. Disk: `raw_html` grows fastest, ~260 KB per page, so 100 GB holds ~200 000 pages.
 
 ### Phase 4 Details
 
@@ -133,7 +152,7 @@ Answers questions about the indexed pages (`phase5-rag-chat`): rewrite → hybri
   3. the model answers in English from those sources only, citing them as `S1`…`S8`; citations to ids it was not sent are dropped, and an answer with no valid citation becomes "The indexed pages do not contain an answer to this question.".
 
   The response carries `answer`, `sources` (`id`, `url`, `snippet`), `results` (the search results) and `degraded`. If generation fails or takes longer than `chat.answer-timeout` (12 s), it comes back with `degraded: true`, an empty `answer` and the results. A question that is blank or longer than `chat.max-question-chars` (1000) is a 400. Both LLM calls are interactive: they keep only the safety margin of the token budget, not the batch reserve.
-- **Re-embed the corpus:** the chat cites the chunk `text` stored in the Qdrant payload, and every point in `page_chunks_v2` has it. A page with no point there yet (not re-embedded since the move off `page_chunks`) is still found by full-text and cited by a `ts_headline` window. To embed the whole corpus into the current collection, mark it and let the embedding backfill run (`embedding.batch-size` pages every `embedding.backfill-interval-ms`). A page whose points are already current (same content hash and model) comes back `unchanged` without an embedding call:
+- **Re-embed the corpus:** the chat cites the chunk `text` stored in the Qdrant payload, and every point in `page_chunks_v3` has it. A page with no point there yet (not re-embedded since the move to the local model) is still found by full-text and cited by a `ts_headline` window. To embed the whole corpus into the current collection, mark it and let the embedding backfill run (`embedding.batch-size` pages every `embedding.backfill-interval-ms`). A page whose points are already current (same content hash and model) comes back `unchanged` without an embedding call:
   ```sql
   UPDATE pages SET embedding_status = 'pending';
   ```
@@ -162,11 +181,16 @@ curl -s localhost:8081/api/chat -H 'Content-Type: application/json' \
 git clone https://github.com/carlosportella/onionmind.git
 cd onionmind
 
-# Start infrastructure — postgres, redpanda, redpanda-console, redis, tor,
-# qdrant (Phase 2+), neo4j (Phase 4). No local AI model: generation and embeddings
-# come from Gemini/DeepSeek (keys below). The tor image is built from tor/Dockerfile
-# (Alpine-packaged Tor); after pulling a change to it, run `docker compose build tor`.
+# Start infrastructure — postgres, redpanda, redis, tor, qdrant (Phase 2+), neo4j (Phase 4).
+# The Kafka UI is opt-in: `docker compose --profile tools up -d redpanda-console`.
+# Generation comes from DeepSeek (key below); embeddings from a model the core runs itself.
+# The tor image is built from tor/Dockerfile (Alpine-packaged Tor); after pulling a change
+# to it, run `docker compose build tor`.
 docker-compose up -d
+
+# Local embedding model (~123 MB, sha256-checked) into ~/.cache/onionmind/models — the
+# core's default embedding.model-dir; also needed by the Java tests.
+./scripts/fetch-embedding-model.sh
 
 # Wait for services to report healthy — redpanda-config runs once and exits.
 # tor turns healthy only once its log reaches "Bootstrapped 100%"; start the crawler after that.
@@ -195,12 +219,11 @@ cd core
 ```
 
 **Enabling AI (Phase 2 embeddings and/or Phase 3 generation):** both are off by
-default. Set the flags and the paid API keys as environment variables (never
-commit them):
+default. Embeddings need only the model files (`./scripts/fetch-embedding-model.sh`);
+generation needs the DeepSeek key as an environment variable (never commit it):
 
 ```bash
-export GEMINI_API_KEY=...    # https://aistudio.google.com — a project WITH billing (embeddings + generation)
-export DEEPSEEK_API_KEY=...  # https://platform.deepseek.com — prepaid balance (generation, last rung)
+export DEEPSEEK_API_KEY=...  # https://platform.deepseek.com — prepaid balance
 ./gradlew bootRun --args='--spring.profiles.active=sandbox \
   --embedding.enabled=true --ai.enabled=true'
 ```
@@ -226,9 +249,7 @@ curl 'http://localhost:8081/api/entities/crypto_wallet/1A1zP1eP5QGefi2DMPTfTL5SL
   spends LLM quota again (all enrichment steps re-run), so do it deliberately.
 
 With no key set for a provider it simply reports zero quota and the router
-skips it; with no usable provider at all, pages wait in the backfill queue. The
-Gemini limits in `ai.providers` are placeholders for the paid tier — the
-per-project numbers are in AI Studio; confirm them before production.
+skips it; with no usable provider at all, pages wait in the backfill queue.
 
 **Note:** `docker-compose.yml`'s `redpanda` service only advertises its
 in-network hostname (`redpanda:9092`) by default for containers on the
@@ -326,9 +347,9 @@ What is real vs. fake:
 
 | Real (Testcontainers / in-process) | Fake |
 |---|---|
-| Postgres, Kafka (`raw-pages`), Redis (quota + cache), Qdrant, Neo4j, pipeline, event listeners, `CostOptimizerRouter`, `ProviderQuotaTracker`, decorators, Gemini/DeepSeek HTTP adapters, `GeminiEmbedder` | The model endpoints only: two local HTTP stubs (Gemini, DeepSeek) answer generation deterministically and return bag-of-concepts embeddings (`FakeAiProviders`) |
+| Postgres, Kafka (`raw-pages`), Redis (quota + cache), Qdrant, Neo4j, pipeline, event listeners, `CostOptimizerRouter`, `ProviderQuotaTracker`, decorators, Gemini/DeepSeek HTTP adapters, the local embedding model (`OnnxEmbedder`) | The generation endpoints only: two local HTTP stubs (Gemini, DeepSeek) answer deterministically (`FakeAiProviders`). The scenarios keep a `gemini,deepseek` ladder to exercise escalation |
 
-No API keys, Tor or real models are needed.
+No API keys or Tor are needed; the embedding model must be in place (`./scripts/fetch-embedding-model.sh`).
 
 ```bash
 cd core
@@ -384,8 +405,8 @@ crawler image ──SOCKS5──▶ e2e-fakes (fake Tor + .onion sites)
       │
       ▼ raw-pages
   Redpanda ──▶ core ──▶ Postgres (Fase 1)
-                 ├────▶ Qdrant + fake Gemini embeddings (Fase 2)
-                 ├────▶ fake Gemini/DeepSeek generation, denylist quarantine (Fase 3)
+                 ├────▶ Qdrant + the real local embedding model (Fase 2)
+                 ├────▶ fake DeepSeek generation, denylist quarantine (Fase 3)
                  └────▶ entities → Neo4j (Fase 4)
                  ▲
      @e2e + @smoke Cucumber scenarios (GET only)
@@ -397,8 +418,8 @@ crawler image ──SOCKS5──▶ e2e-fakes (fake Tor + .onion sites)
 
 The script runs these steps:
 
-1. Builds the core jar.
-2. Starts `e2e/docker-compose.e2e.yml`, which includes the **real crawler image** and `crawler/cmd/e2e-fakes` (Tor, the `.onion` sites, Gemini and DeepSeek).
+1. Fetches the embedding model if it is not cached yet, and builds the core jar.
+2. Starts `e2e/docker-compose.e2e.yml`, which includes the **real crawler image** and `crawler/cmd/e2e-fakes` (Tor, the `.onion` sites and DeepSeek); the core mounts the model from `~/.cache/onionmind/models`.
 3. Runs the `@e2e` scenarios. They check that the seed and the linked page are searchable, that a page reached only through a plain-text `.onion` address is indexed, that semantic search finds a page by concept, that results carry a summary and category, that the denylisted host is not indexed, and that a crawled wallet shows up in `/api/entities` with its page.
 4. Checks that the crawler container exits with code 0 on `SIGTERM`.
 5. Runs every `@smoke` scenario, `@semantic` and `@ia` included.

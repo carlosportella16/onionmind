@@ -21,24 +21,25 @@ spring:
 server:
   port: 8081
 
-# Phase 2: embeddings + semantic search (Gemini embeddings, same key as ai.gemini).
+# Phase 2: embeddings + semantic search (local ONNX model — see application.yml).
 qdrant:
   url: ${QDRANT_URL:localhost}
   port: ${QDRANT_PORT:6333}
   api-key: ${QDRANT_API_KEY:}
-  collection: ${QDRANT_COLLECTION:page_chunks_v2}
+  collection: ${QDRANT_COLLECTION:page_chunks_v3}
   vector-size: ${embedding.dimensions}
 
 embedding:
   enabled: ${EMBEDDING_ENABLED:false}
-  model: gemini-embedding-2
-  dimensions: 768
-  request-batch-size: 100
+  model: multilingual-e5-small-int8
+  model-dir: ${EMBEDDING_MODEL_DIR:${user.home}/.cache/onionmind/models/multilingual-e5-small}
+  threads: ${EMBEDDING_THREADS:2}
+  dimensions: 384
   max-chars-per-page: 50000
-  chunk-size: 512
+  chunk-size: 300   # see application.yml
   chunk-overlap-percent: 15
   batch-size: 100
-  min-score: 0.45   # calibrated live 2026-09-06 (fase3-sdd sec 11.4/P2-2) — see application.yml
+  min-score: 0.79   # multilingual-e5-small, calibrated live 2026-10-25 — see application.yml
 
 # Phase 3: same shape as application.yml, only enabled + keys differ per environment (fase3-sdd D1).
 ai:
@@ -51,10 +52,10 @@ ai:
   max-input-chars: 8000
   backfill:
     max-attempts: 5
-  ladder: gemini,deepseek
-  providers:
-    # Same as application.yml (AI Studio, 2026-10-24, free tier) — raise after billing is on.
-    gemini: { requests-per-minute: 15, requests-per-day: 500, tokens-per-minute: 250000 }
+  ladder: deepseek            # only providers approved for .onion text — see application.yml
+  # Reactivate with a key of a project with billing (see application.yml):
+  # providers:
+  #   gemini: { requests-per-minute: 15, requests-per-day: 500, tokens-per-minute: 250000 }
   gemini:
     base-url: https://generativelanguage.googleapis.com/v1beta
     model: ${GEMINI_MODEL:gemini-3.5-flash-lite}

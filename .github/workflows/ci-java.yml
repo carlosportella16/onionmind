@@ -13,6 +13,16 @@ jobs:
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: '25' }
 
+      # The local embedding model (~118 MB): unit and acceptance tests run it for real.
+      - name: Cache embedding model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/onionmind/models
+          key: embedding-model-${{ hashFiles('scripts/fetch-embedding-model.sh') }}
+
+      - name: Fetch embedding model
+        run: ./scripts/fetch-embedding-model.sh
+
       - name: Run tests with coverage
         working-directory: core
         run: ./gradlew clean test jacocoTestReport  # no -q: it hides the names of failed tests

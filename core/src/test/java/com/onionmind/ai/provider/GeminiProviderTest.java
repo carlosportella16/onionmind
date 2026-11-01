@@ -98,6 +98,36 @@ class GeminiProviderTest {
         assertThat(redis.getExpire("quota:gemini:parked")).isGreaterThan(60L);
     }
 
+    /** The real body of 2026-10-25 (an embedding call on the free tier key): parked until released. */
+    @Test
+    void freeTier429ParksUntilReleasedAndLogsTheWholeQuotaId() throws Exception {
+        server.status = 429;
+        server.responseBody = realFreeTierBody();
+
+        assertThatThrownBy(() -> provider.complete(new CompletionRequest("hi")))
+            .isInstanceOfSatisfying(ProviderException.class, e -> {
+                assertThat(e.exhausted()).isEqualTo(ProviderException.Quota.FREE_TIER);
+                assertThat(e.getMessage()).contains("quotaId=EmbedContentRequestsPerMinutePerUserPerProjectPerModel-FreeTier");
+            });
+
+        assertThat(provider.currentQuota().remaining()).isZero();
+        assertThat(redis.getExpire("quota:gemini:parked")).isEqualTo(-1L);
+    }
+
+    /** The same body from a paid project (no FreeTier suffix): the usual minute park, quotaId still logged. */
+    @Test
+    void paidTier429ParksForTheLimitPeriod() throws Exception {
+        server.status = 429;
+        server.responseBody = realFreeTierBody().replace("-FreeTier", "");
+
+        assertThatThrownBy(() -> provider.complete(new CompletionRequest("hi")))
+            .isInstanceOfSatisfying(ProviderException.class, e -> {
+                assertThat(e.exhausted()).isEqualTo(ProviderException.Quota.MINUTE);
+                assertThat(e.getMessage()).contains("quotaId=EmbedContentRequestsPerMinutePerUserPerProjectPerModel ");
+            });
+        assertThat(redis.getExpire("quota:gemini:parked")).isBetween(0L, 60L);
+    }
+
     @Test
     void unparseable429FallsBackToTheMinutePark() {
         server.status = 429;
@@ -118,6 +148,12 @@ class GeminiProviderTest {
                 assertThat(e.rateLimited()).isFalse();
             });
         assertThat(provider.currentQuota().remaining()).isPositive();
+    }
+
+    private static String realFreeTierBody() throws Exception {
+        try (var in = GeminiProviderTest.class.getResourceAsStream("/ai/gemini-429-free-tier.json")) {
+            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
     }
 
     private static String quotaFailure(String quotaId) {

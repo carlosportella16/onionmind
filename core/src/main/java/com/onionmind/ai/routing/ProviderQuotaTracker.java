@@ -144,7 +144,8 @@ public class ProviderQuotaTracker {
         String key = parkedKey(providerId);
         if (until == null) {
             redis.opsForValue().set(key, UNTIL_RELEASED);
-            log.warn("AI provider {} is out of balance: parked until restart or `DEL {}`", providerId, key);
+            log.warn("AI provider {} is out of balance or on a free tier: parked until restart or `DEL {}`",
+                providerId, key);
             return;
         }
         Duration ttl = Duration.between(clock.instant(), until);
@@ -153,13 +154,13 @@ public class ProviderQuotaTracker {
         }
     }
 
-    /** When quota comes back after hitting {@code quota}: next minute, next quota day, or never (402). */
+    /** When quota comes back after hitting {@code quota}: next minute, next quota day, or never (402, free tier). */
     public Instant quotaReturns(ProviderException.Quota quota) {
         Instant now = clock.instant();
         return switch (quota) {
             case MINUTE -> Instant.ofEpochSecond((now.getEpochSecond() / 60 + 1) * 60);
             case DAY -> LocalDate.ofInstant(now, QUOTA_DAY_ZONE).plusDays(1).atStartOfDay(QUOTA_DAY_ZONE).toInstant();
-            case BALANCE -> null;
+            case BALANCE, FREE_TIER -> null;
         };
     }
 

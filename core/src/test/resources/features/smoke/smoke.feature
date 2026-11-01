@@ -29,7 +29,8 @@ Funcionalidade: Smoke — instância em execução responde nos contratos princi
   Cenário: Métricas de IA expostas
     Quando eu consulto "/actuator/prometheus"
     Então a resposta tem status 200
-    E o corpo contém as séries "ingestion_ai_lag" e "ai_quota_remaining"
+    # ai_quota_remaining só existe para provedor com teto; a escada padrão (só DeepSeek) não tem nenhum.
+    E o corpo contém as séries "ingestion_ai_lag" e "embedding_truncated_chunks_total"
 
   @somente-leitura
   Cenário: Execução não altera dados

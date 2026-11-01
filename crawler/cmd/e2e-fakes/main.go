@@ -35,7 +35,7 @@ var pages = map[string]string{
 <p>Doações para 1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa. Espelho em 2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion.</p>
 </body></html>`,
 	"conceito-e2e.onion": `<html><body>
-<p>Mercado aceita moeda digital anônima e registra tudo num blockchain descentralizado para os compradores da rede.</p>
+<p>Marketplace that accepts anonymous digital money and records every sale on a decentralized blockchain for the buyers of the network.</p>
 </body></html>`,
 	// Host listed in e2e/denylist.txt: the core must quarantine it, never index it.
 	"proibido-e2e.onion": `<html><body>

@@ -47,14 +47,18 @@ class QdrantVersionedIndexTest {
 
     @Test
     void missingCollectionIsCreatedWithTheConfiguredDimension() {
-        QdrantVectorStore store = store("created_v2", 4, "gemini-embedding-2");
+        QdrantVectorStore store = store("page_chunks_v3", 384, "multilingual-e5-small-int8");
+        float[] vector = new float[384];
+        vector[0] = 1;
 
         store.ensureCollectionOnStartup();
-        store.upsert(List.of(point("http://a.onion/", new float[]{1, 0, 0, 0})));
+        store.upsert(List.of(point("http://a.onion/", vector)));
 
-        assertThat(store.search(new float[]{1, 0, 0, 0}, 5)).extracting(SemanticSearchHit::url)
+        assertThat(store.search(vector, 5)).extracting(SemanticSearchHit::url)
             .containsExactly("http://a.onion/");
         store.ensureCollection(); // second boot: same dimension, nothing to do
+        assertThatThrownBy(store("page_chunks_v3", 768, "gemini-embedding-2")::ensureCollection)
+            .hasMessageContaining("page_chunks_v3").hasMessageContaining("384").hasMessageContaining("768");
     }
 
     @Test

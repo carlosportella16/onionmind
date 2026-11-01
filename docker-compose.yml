@@ -44,7 +44,10 @@ services:
     command: ["rpk cluster config set kafka_batch_max_bytes 12582912 -X admin.hosts=redpanda:9644"]
     restart: "no"
 
+  # Kafka UI for debugging only — not in the default `up` (and never on the VPS):
+  # `docker compose --profile tools up -d redpanda-console`.
   redpanda-console:
+    profiles: [tools]
     image: redpandadata/console:v2.7.2
     environment:
       KAFKA_BROKERS: redpanda:9092
@@ -71,8 +74,8 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-  # No local AI: generation and embeddings come from Gemini (paid) and DeepSeek
-  # (replace-ollama-with-gemini-deepseek) — set GEMINI_API_KEY / DEEPSEEK_API_KEY for the core.
+  # No AI service: generation comes from DeepSeek (set DEEPSEEK_API_KEY for the core) and
+  # embeddings from the model the core runs itself (local-onnx-embeddings).
 
   qdrant:
     image: qdrant/qdrant:v1.11.0
@@ -91,6 +94,9 @@ services:
     image: neo4j:5-community
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-onionmind_dev_only}
+      # Sized for the 8 GB VPS (local-onnx-embeddings D9); the default heap grows to 1/4 of RAM.
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
     ports: ["7474:7474", "7687:7687"]
     volumes:
       - neo4j_data:/data

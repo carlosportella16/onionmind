@@ -87,7 +87,7 @@ class OpenAiCompatibleProviderTest {
 
         assertThatThrownBy(() -> provider.complete(new CompletionRequest("hi")))
             .isInstanceOfSatisfying(ProviderException.class, e -> {
-                assertThat(e.rateLimited()).isTrue();
+                assertThat(e.exhausted()).isEqualTo(ProviderException.Quota.MINUTE); // no quotaId: not a free tier
                 assertThat(e.retryable()).isFalse();
             });
 

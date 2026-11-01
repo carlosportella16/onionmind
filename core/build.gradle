@@ -48,6 +48,9 @@ dependencies {
 	implementation 'org.jsoup:jsoup:1.18.1'
 	implementation 'com.googlecode.owasp-java-html-sanitizer:owasp-java-html-sanitizer:20240325.1'
 	implementation 'com.google.guava:guava:33.3.1-jre'
+	// Local embeddings (local-onnx-embeddings D1): ONNX Runtime + the SentencePiece tokenizer.
+	implementation 'com.microsoft.onnxruntime:onnxruntime:1.31.0'
+	implementation 'ai.djl.sentencepiece:sentencepiece:0.39.0'
 	runtimeOnly 'org.postgresql:postgresql'
 	runtimeOnly 'org.springframework.modulith:spring-modulith-actuator'
 	runtimeOnly 'org.springframework.modulith:spring-modulith-events-kafka'
@@ -80,6 +83,15 @@ dependencyManagement {
 	imports {
 		mavenBom "org.springframework.modulith:spring-modulith-bom:${springModulithVersion}"
 	}
+}
+
+// ONNX Runtime and SentencePiece load native libraries (local-onnx-embeddings D1).
+tasks.withType(JavaForkOptions).configureEach {
+	jvmArgs '--enable-native-access=ALL-UNNAMED'
+}
+
+bootJar {
+	manifest { attributes 'Enable-Native-Access': 'ALL-UNNAMED' }
 }
 
 tasks.named('test') {
